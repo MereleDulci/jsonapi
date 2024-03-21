@@ -860,77 +860,174 @@ func TestMarshalWithRelationships(t *testing.T) {
 			t.Fatal("unexpected number of included resources")
 		}
 	})
+
+	t.Run("should not push documents with zero ids into included", func(t *testing.T) {
+		type Rel struct {
+			ID  string `jsonapi:"primary,related"`
+			Str string
+		}
+
+		type SUT struct {
+			ID         string `jsonapi:"primary,test"`
+			ByValue    Rel    `jsonapi:"relation,val"`
+			SliceValue []Rel  `jsonapi:"relation,vals"`
+		}
+
+		input := SUT{
+			ID: "1",
+			ByValue: Rel{
+				ID: "",
+			},
+			SliceValue: []Rel{
+				{ID: ""},
+			},
+		}
+
+		raw, err := Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		check := map[string]interface{}{}
+		if err := json.Unmarshal(raw, &check); err != nil {
+			t.Fatal(err)
+		}
+
+		if len(check["included"].([]interface{})) != 0 {
+			t.Fatal("unexpected number of included resources")
+		}
+	})
 }
 
 func TestMarshalRelationshipDeduplication(t *testing.T) {
+	//Inclusion order matters, need to check multiple combinations of the same data in list
 
-	type Comment struct {
-		ID      string `jsonapi:"primary,comments"`
-		Content string
-		ReplyTo *Comment `jsonapi:"relation,reply"`
-	}
+	t.Run("should correctly merge non-zero attributes", func(t *testing.T) {
 
-	type Post struct {
-		ID       string     `jsonapi:"primary,posts"`
-		Comments []*Comment `jsonapi:"relation,comments"`
-	}
-
-	input := Post{
-		ID: "1",
-		Comments: []*Comment{
-			{ID: "2", Content: "first"},
-			{ID: "3", Content: "second", ReplyTo: &Comment{ID: "2"}},
-			{ID: "4", Content: "third", ReplyTo: &Comment{ID: "3"}},
-			{ID: "5", Content: "third", ReplyTo: &Comment{ID: "6"}},
-		},
-	}
-
-	raw, err := Marshal(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	check := map[string]interface{}{}
-	if err := json.Unmarshal(raw, &check); err != nil {
-		t.Fatal(err)
-	}
-
-	if len(check["included"].([]interface{})) != 5 {
-		t.Fatalf("unexpected number of included resources, got %v", len(check["included"].([]interface{})))
-	}
-
-	for _, v := range check["included"].([]interface{}) {
-		doc, ok := v.(map[string]interface{})
-		if !ok {
-			t.Fatal("invalid document format")
+		type Comment struct {
+			ID      string `jsonapi:"primary,comments"`
+			Content string
+			Bool    bool
+			ReplyTo *Comment `jsonapi:"relation,reply"`
 		}
 
-		if _, ok := doc["id"]; !ok {
-			t.Fatal("missing id")
+		type Post struct {
+			ID       string     `jsonapi:"primary,posts"`
+			Comments []*Comment `jsonapi:"relation,comments"`
 		}
 
-		typeV, ok := doc["type"]
-		if !ok {
-			t.Fatal("missing type")
+		hand := []*Comment{
+			{ID: "2", Content: "first", Bool: true},
+			{ID: "4", Content: "third", Bool: true, ReplyTo: &Comment{ID: "3"}},
+			{ID: "3", Content: "second", Bool: true, ReplyTo: &Comment{ID: "2"}},
+			{ID: "5", Content: "third", Bool: true, ReplyTo: &Comment{ID: "6"}},
 		}
 
-		if typeV != "comments" {
-			t.Fatal("unexpected type")
+		for i, _ := range hand {
+			for j, _ := range hand {
+				hand[j], hand[i] = hand[i], hand[j]
+				input := Post{
+					ID:       "1",
+					Comments: hand,
+				}
+
+				raw, err := Marshal(input)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				check := map[string]interface{}{}
+				if err := json.Unmarshal(raw, &check); err != nil {
+					t.Fatal(err)
+				}
+
+				if len(check["included"].([]interface{})) != 5 {
+					t.Fatalf("unexpected number of included resources, got %v", len(check["included"].([]interface{})))
+				}
+
+				for _, v := range check["included"].([]interface{}) {
+					doc, ok := v.(map[string]interface{})
+					if !ok {
+						t.Fatal("invalid document format")
+					}
+
+					if _, ok := doc["id"]; !ok {
+						t.Fatal("missing id")
+					}
+
+					typeV, ok := doc["type"]
+					if !ok {
+						t.Fatal("missing type")
+					}
+
+					if typeV != "comments" {
+						t.Fatal("unexpected type")
+					}
+
+					if _, ok := doc["attributes"]; !ok {
+						t.Fatal("missing attributes")
+					}
+
+					if _, ok := doc["relationships"]; !ok {
+						t.Fatal("missing relationships")
+					}
+
+					attrs := doc["attributes"].(map[string]interface{})
+					if attrs["content"] == "" && doc["id"] != "6" {
+						t.Fatal("unexpected string attribute value")
+					}
+					if attrs["bool"] == false && doc["id"] != "6" {
+						t.Fatal("unexpected boolean attribute value")
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("should correctly merge non-zero relationships", func(t *testing.T) {
+
+		type Comment struct {
+			ID     string   `jsonapi:"primary,comments"`
+			Parent *Comment `jsonapi:"relation,parent"`
 		}
 
-		if _, ok := doc["attributes"]; !ok {
-			t.Fatal("missing attributes")
+		type Post struct {
+			ID       string     `jsonapi:"primary,posts"`
+			Comments []*Comment `jsonapi:"relation,comments"`
 		}
 
-		if _, ok := doc["relationships"]; !ok {
-			t.Fatal("missing relationships")
+		hand := []*Comment{
+			{ID: "2"},
+			{ID: "3", Parent: &Comment{ID: "2"}},
+			{ID: "4", Parent: &Comment{ID: "3"}},
+			{ID: "5", Parent: &Comment{ID: "4", Parent: &Comment{ID: "3"}}},
 		}
 
-		attrs := doc["attributes"].(map[string]interface{})
-		if attrs["content"] == "" && doc["id"] != "6" {
-			t.Fatal("unexpected attribute value")
+		for i, _ := range hand {
+			for j, _ := range hand {
+				hand[i], hand[j] = hand[j], hand[i]
+
+				input := Post{
+					ID:       "1",
+					Comments: hand,
+				}
+
+				raw, err := Marshal(input)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				check := map[string]interface{}{}
+				if err := json.Unmarshal(raw, &check); err != nil {
+					t.Fatal(err)
+				}
+
+				if len(check["included"].([]interface{})) != 4 {
+					t.Fatalf("unexpected number of included resources, got %v", len(check["included"].([]interface{})))
+				}
+			}
 		}
-	}
+	})
 }
 
 func TestMarshalID(t *testing.T) {

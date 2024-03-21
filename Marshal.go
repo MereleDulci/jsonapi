@@ -391,16 +391,20 @@ func deduplicateIncluded(includes []interface{}) []interface{} {
 		doc := include.(map[string]interface{})
 		resourceType := doc["type"]
 		resourceId := doc["id"]
+		if resourceId == "" {
+			continue
+		}
+
 		key := resourceType.(string) + resourceId.(string)
 
 		if _, ok := unique[key]; ok {
 			attributesLeft := doc["attributes"].(map[string]interface{})
 			attributesRight := unique[key].(map[string]interface{})["attributes"].(map[string]interface{})
-			mergedAttributes := shallowMerge(attributesLeft, attributesRight)
+			mergedAttributes := shallowMerge(attributesLeft, attributesRight, isAttributeZero)
 
 			relationshipsLeft := doc["relationships"].(map[string]interface{})
 			relationshipsRight := unique[key].(map[string]interface{})["relationships"].(map[string]interface{})
-			mergedRelationships := shallowMerge(relationshipsLeft, relationshipsRight)
+			mergedRelationships := shallowMerge(relationshipsLeft, relationshipsRight, isAttributeZero)
 
 			unique[key] = map[string]interface{}{
 				"type":          resourceType,
@@ -421,23 +425,25 @@ func deduplicateIncluded(includes []interface{}) []interface{} {
 	return out
 }
 
-func shallowMerge(a, b map[string]interface{}) map[string]interface{} {
+type zeroPredicate func(i interface{}) bool
+
+func shallowMerge(a, b map[string]interface{}, isZero zeroPredicate) map[string]interface{} {
 	out := map[string]interface{}{}
 	for k, v := range a {
-		out[k] = v
+		if !isZero(v) {
+			out[k] = v
+		}
 	}
 	for k, v := range b {
-		out[k] = v
+		if !isZero(v) {
+			out[k] = v
+		}
 	}
 	return out
 }
 
 func isAttributeZero(attr interface{}) bool {
-	return false
-}
-
-func isRelationshipZero(rel interface{}) bool {
-	return false
+	return reflect.ValueOf(attr).IsZero()
 }
 
 func toCamelCase(s string) string {
