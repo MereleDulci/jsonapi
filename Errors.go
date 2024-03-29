@@ -13,7 +13,7 @@ type JSONAPIError struct {
 	//id: a unique identifier for this particular occurrence of the problem.
 	ID string `json:"id"`
 	//status: the HTTP status code applicable to this problem, expressed as a string value. This SHOULD be provided.
-	Status int `json:"status"`
+	Status string `json:"status"`
 	//code: an application-specific error code, expressed as a string value.
 	Code string `json:"code,omitempty"`
 	//title: a short, human-readable summary of the problem that SHOULD NOT change from occurrence to occurrence of the problem, except for purposes of localization.
