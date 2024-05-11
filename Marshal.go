@@ -251,6 +251,9 @@ func getEncodedFieldName(field reflect.StructField) string {
 	jsonTag := field.Tag.Get("json")
 	if jsonTag != "" {
 		parts := strings.Split(jsonTag, ",")
+		if len(parts) == 1 && parts[0] == "-" { //Compatibility with json "-" conventions
+			return ""
+		}
 		if len(parts) > 0 && parts[0] != "" {
 			return parts[0]
 		}
@@ -266,11 +269,18 @@ func prepareAttributesNode(field reflect.Value) interface{} {
 		if field.Type() == reflect.TypeOf(time.Time{}) {
 			return field.Interface().(time.Time).Format(time.RFC3339)
 		}
+		_, isMarshaler := field.Interface().(json.Marshaler)
+		if isMarshaler {
+			return field.Interface()
+		}
 
 		embed := map[string]interface{}{}
 
 		for i, n := 0, field.NumField(); i < n; i++ {
 			encodedFieldName := getEncodedFieldName(field.Type().Field(i))
+			if encodedFieldName == "" {
+				continue
+			}
 			embed[encodedFieldName] = prepareAttributesNode(field.Field(i))
 		}
 		return embed
@@ -282,10 +292,17 @@ func prepareAttributesNode(field reflect.Value) interface{} {
 		if field.Elem().Type() == reflect.TypeOf(time.Time{}) {
 			return field.Interface().(*time.Time).Format(time.RFC3339)
 		}
+		_, isMarshaler := field.Elem().Interface().(json.Marshaler)
+		if isMarshaler {
+			return field.Interface()
+		}
 
 		embed := map[string]interface{}{}
 		for i, n := 0, field.Elem().NumField(); i < n; i++ {
 			encodedFieldName := getEncodedFieldName(field.Elem().Type().Field(i))
+			if encodedFieldName == "" {
+				continue
+			}
 			embed[encodedFieldName] = prepareAttributesNode(field.Elem().Field(i))
 		}
 		return embed

@@ -45,10 +45,12 @@ func TestMarshal_single(t *testing.T) {
 			ID            string `jsonapi:"primary,resource-name"`
 			ExportedField string
 			private       string
+			Muted         string `json:"-"`
 		}{
 			ID:            "1",
 			ExportedField: "test",
 			private:       "private",
+			Muted:         "muted",
 		}
 
 		plain, err := MarshalOne(input)
@@ -83,21 +85,40 @@ func TestMarshal_single(t *testing.T) {
 			if _, ok := attrs["private"]; ok {
 				t.Fatal("private field should not be present")
 			}
+
+			if _, ok := attrs["muted"]; ok {
+				t.Fatal("muted field should not be present")
+			}
+			if _, ok := attrs["-"]; ok {
+				t.Fatal("muted field should not be present")
+			}
 		}
 	})
 
 	t.Run("should correctly marshal a single resource with nested structs", func(t *testing.T) {
 		input := struct {
-			ID                  string `jsonapi:"primary,resource-name"`
-			ExportedStruct      struct{ A int }
-			ExportedRef         *struct{ A int }
+			ID             string `jsonapi:"primary,resource-name"`
+			ExportedStruct struct {
+				A     int
+				Muted string `json:"-"`
+			}
+			ExportedRef *struct {
+				A     int
+				Muted string `json:"-"`
+			}
 			ExportedSlice       []string
 			ExportedStructSlice []struct{ A int }
 			ExportedRefSlice    []*struct{ A int }
 		}{
-			ID:                  "1",
-			ExportedStruct:      struct{ A int }{A: 1},
-			ExportedRef:         &struct{ A int }{A: 1},
+			ID: "1",
+			ExportedStruct: struct {
+				A     int
+				Muted string `json:"-"`
+			}{A: 1, Muted: "muted"},
+			ExportedRef: &struct {
+				A     int
+				Muted string `json:"-"`
+			}{A: 1, Muted: "muted"},
 			ExportedSlice:       []string{"a"},
 			ExportedStructSlice: []struct{ A int }{{A: 1}},
 			ExportedRefSlice:    []*struct{ A int }{{A: 1}},
@@ -128,8 +149,23 @@ func TestMarshal_single(t *testing.T) {
 				t.Fatal("unexpected attribute value on struct")
 			}
 
+			if _, ok := attrs["exportedStruct"].(map[string]interface{})["muted"]; ok {
+				t.Fatal("muted field should not be present")
+			}
+			if _, ok := attrs["exportedStruct"].(map[string]interface{})["-"]; ok {
+				t.Fatal("muted field should not be present")
+			}
+
 			if attrs["exportedRef"].(map[string]interface{})["a"] != float64(1) {
 				t.Fatal("unexpected attribute value on ref")
+			}
+
+			if _, ok := attrs["exportedRef"].(map[string]interface{})["muted"]; ok {
+				t.Fatal("muted field should not be present")
+			}
+
+			if _, ok := attrs["exportedRef"].(map[string]interface{})["-"]; ok {
+				t.Fatal("muted field should not be present")
 			}
 
 			if attrs["exportedSlice"].([]interface{})[0] != "a" {
@@ -144,6 +180,54 @@ func TestMarshal_single(t *testing.T) {
 				t.Fatal("unexpected attribute value on slice of refs")
 			}
 		}
+	})
+
+	t.Run("should apply MarshalJSON method on nested structs if defined", func(t *testing.T) {
+		input := struct {
+			ID             string `jsonapi:"primary,resource-name"`
+			ExportedStruct nestedWithMarshalInner
+			ExportedRef    *nestedWithMarshalInner
+		}{
+			ID:             "1",
+			ExportedStruct: nestedWithMarshalInner{A: 1},
+			ExportedRef:    &nestedWithMarshalInner{A: 1},
+		}
+
+		plain, err := MarshalOne(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		ref, err := MarshalOne(&input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, v := range [][]byte{plain, ref} {
+			check := map[string]interface{}{}
+			if err := json.Unmarshal(v, &check); err != nil {
+				t.Fatal(err)
+			}
+
+			attrs, ok := check["data"].(map[string]interface{})["attributes"].(map[string]interface{})
+			if !ok {
+				t.Fatal("unexpected attributes type")
+			}
+
+			if attrs["exportedStruct"].(map[string]interface{})["a"] == float64(1) {
+				t.Fatal("expected Marshaller to rename the field")
+			}
+			if attrs["exportedStruct"].(map[string]interface{})["b"] != float64(1) {
+				t.Fatal("unexpected attribute value on struct")
+			}
+			if attrs["exportedRef"].(map[string]interface{})["a"] == float64(1) {
+				t.Fatal("expected Marshaller to rename the field")
+			}
+			if attrs["exportedRef"].(map[string]interface{})["b"] != float64(1) {
+				t.Fatal("unexpected attribute value on struct")
+			}
+		}
+
 	})
 
 }

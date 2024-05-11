@@ -223,6 +223,27 @@ func TestUnmarshalOne(t *testing.T) {
 
 	})
 
+	t.Run("should apply json.Unmarshaler if available", func(t *testing.T) {
+		type SUT struct {
+			ID  string `jsonapi:"primary,tests"`
+			Val nestedWithMarshalInner
+			Ref *nestedWithMarshalInner
+		}
+
+		raw := `{"data": {"type": "tests", "id": "1", "attributes": {"val": {"b": 1}, "ref": {"b": 2}}}}`
+		out := SUT{}
+		err := Unmarshal([]byte(raw), &out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Val.A != 1 {
+			t.Fatal("unexpected attribute value")
+		}
+
+		if out.Ref.A != 2 {
+			t.Fatal("unexpected attribute value")
+		}
+	})
 }
 
 func TestUnmarshalMany(t *testing.T) {

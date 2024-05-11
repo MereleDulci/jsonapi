@@ -223,6 +223,13 @@ func unmarshalSingleAttribute(fieldVal reflect.Value, attribute interface{}) {
 		if isHandled {
 			return
 		}
+		isHandled, err = unmarshalUnmarshaler(fieldVal, attribute)
+		if err != nil {
+			panic(err)
+		}
+		if isHandled {
+			return
+		}
 
 		var toFillIn = reflect.New(fieldVal.Type())
 
@@ -242,7 +249,13 @@ func unmarshalSingleAttribute(fieldVal reflect.Value, attribute interface{}) {
 		if isHandled {
 			return
 		}
-
+		isHandled, err = unmarshalUnmarshaler(fieldVal, attribute)
+		if err != nil {
+			panic(err)
+		}
+		if isHandled {
+			return
+		}
 		toFillIn := reflect.New(fieldVal.Type().Elem())
 
 		if fieldVal.Type().Elem().Kind() == reflect.Struct {
@@ -316,6 +329,37 @@ func unmarshalTime(fieldVal reflect.Value, attribute interface{}) (bool, error) 
 				return false, err
 			}
 			fieldVal.Set(reflect.ValueOf(concreteValue))
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func unmarshalUnmarshaler(fieldVal reflect.Value, attribute interface{}) (bool, error) {
+	switch fieldVal.Type().Kind() {
+	case reflect.Ptr:
+		if fieldVal.Type().Implements(reflect.TypeOf((*json.Unmarshaler)(nil)).Elem()) {
+			v := reflect.New(fieldVal.Type().Elem())
+			recoded, err := json.Marshal(attribute)
+			if err != nil {
+				return false, err
+			}
+			v.MethodByName("UnmarshalJSON").
+				Call([]reflect.Value{reflect.ValueOf(recoded)})
+			fieldVal.Set(v)
+			return true, nil
+		}
+	case reflect.Struct:
+		if reflect.PointerTo(fieldVal.Type()).Implements(reflect.TypeOf((*json.Unmarshaler)(nil)).Elem()) {
+			v := reflect.New(fieldVal.Type())
+			recoded, err := json.Marshal(attribute)
+			if err != nil {
+				return false, err
+			}
+			v.MethodByName("UnmarshalJSON").
+				Call([]reflect.Value{reflect.ValueOf(recoded)})
+			fieldVal.Set(v.Elem())
 			return true, nil
 		}
 	}
