@@ -2,6 +2,7 @@ package jsonapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -92,6 +93,9 @@ func TestMarshal_single(t *testing.T) {
 			if _, ok := attrs["-"]; ok {
 				t.Fatal("muted field should not be present")
 			}
+			if _, ok := attrs[""]; ok {
+				t.Fatal("muted field should not be present")
+			}
 		}
 	})
 
@@ -155,6 +159,9 @@ func TestMarshal_single(t *testing.T) {
 			if _, ok := attrs["exportedStruct"].(map[string]interface{})["-"]; ok {
 				t.Fatal("muted field should not be present")
 			}
+			if _, ok := attrs["exportedStruct"].(map[string]interface{})[""]; ok {
+				t.Fatal("muted field should not be present")
+			}
 
 			if attrs["exportedRef"].(map[string]interface{})["a"] != float64(1) {
 				t.Fatal("unexpected attribute value on ref")
@@ -165,6 +172,10 @@ func TestMarshal_single(t *testing.T) {
 			}
 
 			if _, ok := attrs["exportedRef"].(map[string]interface{})["-"]; ok {
+				t.Fatal("muted field should not be present")
+			}
+
+			if _, ok := attrs["exportedRef"].(map[string]interface{})[""]; ok {
 				t.Fatal("muted field should not be present")
 			}
 
@@ -687,12 +698,13 @@ func TestMarshalMany(t *testing.T) {
 	type Test struct {
 		ID    string `jsonapi:"primary,resource-name"`
 		Value string
+		Muted string `json:"-"`
 	}
 
 	t.Run("should correctly marshal a collection of resources as values", func(t *testing.T) {
 		inputs := []Test{
-			{ID: "1", Value: "one"},
-			{ID: "2", Value: "two"},
+			{ID: "1", Value: "one", Muted: "mute"},
+			{ID: "2", Value: "two", Muted: "mute"},
 		}
 
 		plain, err := MarshalMany(inputs)
@@ -731,8 +743,20 @@ func TestMarshalMany(t *testing.T) {
 					t.Fatal("unexpected type")
 				}
 
-				if _, ok := doc["attributes"]; !ok {
+				attrs, ok := doc["attributes"]
+				if !ok {
 					t.Fatal("missing attributes")
+				}
+
+				fmt.Println(attrs)
+				if attrs.(map[string]interface{})["muted"] == "mute" {
+					t.Fatal("muted field should not be present")
+				}
+				if attrs.(map[string]interface{})["-"] == "mute" {
+					t.Fatal("muted field should not be present")
+				}
+				if attrs.(map[string]interface{})[""] == "mute" {
+					t.Fatal("muted field should not be present")
 				}
 
 			}
@@ -741,8 +765,8 @@ func TestMarshalMany(t *testing.T) {
 
 	t.Run("should correctly marshal a collection of resources as pointers", func(t *testing.T) {
 		inputs := []*Test{
-			{ID: "1", Value: "one"},
-			{ID: "2", Value: "two"},
+			{ID: "1", Value: "one", Muted: "mute"},
+			{ID: "2", Value: "two", Muted: "mute"},
 		}
 
 		plain, err := MarshalMany(inputs)
@@ -781,8 +805,19 @@ func TestMarshalMany(t *testing.T) {
 					t.Fatal("unexpected type")
 				}
 
-				if _, ok := doc["attributes"]; !ok {
+				attrs, ok := doc["attributes"]
+				if !ok {
 					t.Fatal("missing attributes")
+				}
+
+				if attrs.(map[string]interface{})["muted"] == "mute" {
+					t.Fatal("muted field should not be present")
+				}
+				if attrs.(map[string]interface{})["-"] == "mute" {
+					t.Fatal("muted field should not be present")
+				}
+				if attrs.(map[string]interface{})[""] == "mute" {
+					t.Fatal("muted field should not be present")
 				}
 
 			}

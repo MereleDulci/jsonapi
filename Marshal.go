@@ -252,7 +252,7 @@ func getEncodedFieldName(field reflect.StructField) string {
 	if jsonTag != "" {
 		parts := strings.Split(jsonTag, ",")
 		if len(parts) == 1 && parts[0] == "-" { //Compatibility with json "-" conventions
-			return ""
+			return "-"
 		}
 		if len(parts) > 0 && parts[0] != "" {
 			return parts[0]
@@ -278,7 +278,7 @@ func prepareAttributesNode(field reflect.Value) interface{} {
 
 		for i, n := 0, field.NumField(); i < n; i++ {
 			encodedFieldName := getEncodedFieldName(field.Type().Field(i))
-			if encodedFieldName == "" {
+			if encodedFieldName == "-" {
 				continue
 			}
 			embed[encodedFieldName] = prepareAttributesNode(field.Field(i))
@@ -300,7 +300,7 @@ func prepareAttributesNode(field reflect.Value) interface{} {
 		embed := map[string]interface{}{}
 		for i, n := 0, field.Elem().NumField(); i < n; i++ {
 			encodedFieldName := getEncodedFieldName(field.Elem().Type().Field(i))
-			if encodedFieldName == "" {
+			if encodedFieldName == "-" {
 				continue
 			}
 			embed[encodedFieldName] = prepareAttributesNode(field.Elem().Field(i))
