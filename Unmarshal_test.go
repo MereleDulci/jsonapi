@@ -513,3 +513,101 @@ func TestUnmarshalTime(t *testing.T) {
 		}
 	})
 }
+
+func TestUnmarshalWithIncluded(t *testing.T) {
+
+	t.Run("should correctly unmarshal included doc into a single value", func(t *testing.T) {
+		type Ref struct {
+			ID  string `jsonapi:"primary,references"`
+			Val string `jsonapi:"attr,val"`
+		}
+
+		type Main struct {
+			ID  string `jsonapi:"primary,mains"`
+			Ref *Ref   `jsonapi:"relation,ref"`
+			Val Ref    `jsonapi:"relation,val"`
+		}
+
+		input := Main{
+			ID:  "1",
+			Ref: &Ref{ID: "2", Val: "test"},
+			Val: Ref{ID: "3", Val: "test"},
+		}
+
+		raw, err := Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		out := Main{}
+		err = Unmarshal(raw, &out)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if out.Val != input.Val {
+			t.Errorf("expected %+v, got %+v", input.Val, out.Val)
+		}
+		if *out.Ref != *input.Ref {
+			t.Errorf("expected %+v, got %+v", input.Ref, out.Ref)
+		}
+	})
+
+	t.Run("should correctly unmarshal included doc into a slice of values", func(t *testing.T) {
+		type Ref struct {
+			ID  string `jsonapi:"primary,references"`
+			Val string `jsonapi:"attr,val"`
+		}
+
+		type Main struct {
+			ID   string `jsonapi:"primary,mains"`
+			Refs []*Ref `jsonapi:"relation,refs"`
+			Vals []Ref  `jsonapi:"relation,vals"`
+		}
+
+		input := Main{
+			ID: "1",
+			Refs: []*Ref{
+				{ID: "2", Val: "test"},
+				{ID: "3", Val: "test"},
+			},
+			Vals: []Ref{
+				{ID: "4", Val: "test"},
+				{ID: "5", Val: "test"},
+			},
+		}
+
+		raw, err := Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+
+		}
+
+		out := Main{}
+		err = Unmarshal(raw, &out)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(out.Refs) != len(input.Refs) {
+			t.Errorf("expected %+v, got %+v", input.Refs, out.Refs)
+		}
+
+		for i, ref := range input.Refs {
+			if *out.Refs[i] != *ref {
+				t.Errorf("expected %+v, got %+v", input.Refs[i], out.Refs[i])
+			}
+		}
+
+		if len(out.Vals) != len(input.Vals) {
+			t.Errorf("expected %+v, got %+v", input.Vals, out.Vals)
+		}
+
+		for i, val := range input.Vals {
+			if out.Vals[i] != val {
+				t.Errorf("expected %+v, got %+v", input.Vals[i], out.Vals[i])
+			}
+		}
+
+	})
+}

@@ -17,6 +17,11 @@ func UnmarshalManyAsType(payload []byte, model reflect.Type) ([]interface{}, err
 		return nil, err
 	}
 
+	included, ok := raw["included"].([]interface{})
+	if !ok {
+		included = make([]interface{}, 0)
+	}
+
 	data, ok := raw["data"].([]interface{})
 	if !ok {
 		return nil, errors.New("invalid data structure")
@@ -31,7 +36,7 @@ func UnmarshalManyAsType(payload []byte, model reflect.Type) ([]interface{}, err
 
 		out := reflect.New(model.Elem()).Interface()
 
-		err = unmarshalOne(resourceData, out)
+		err = unmarshalOne(resourceData, out, included)
 		if err != nil {
 			return nil, err
 		}
@@ -49,6 +54,11 @@ func UnmarshalOneAsType(payload []byte, model reflect.Type) (interface{}, error)
 		return nil, err
 	}
 
+	included, ok := raw["included"].([]interface{})
+	if !ok {
+		included = make([]interface{}, 0)
+	}
+
 	data, ok := raw["data"].(map[string]interface{})
 	if !ok {
 		return nil, errors.New("invalid data structure")
@@ -59,7 +69,7 @@ func UnmarshalOneAsType(payload []byte, model reflect.Type) (interface{}, error)
 	}
 
 	out := reflect.New(model.Elem()).Interface()
-	err = unmarshalOne(data, out)
+	err = unmarshalOne(data, out, included)
 	if err != nil {
 		return nil, err
 	}
@@ -74,9 +84,14 @@ func Unmarshal(data []byte, model interface{}) error {
 		return err
 	}
 
+	included, ok := raw["included"].([]interface{})
+	if !ok {
+		included = []interface{}{}
+	}
+
 	switch raw["data"].(type) {
 	case map[string]interface{}:
-		err = unmarshalOne(raw["data"].(map[string]interface{}), model)
+		err = unmarshalOne(raw["data"].(map[string]interface{}), model, included)
 		if err != nil {
 			return err
 		}
@@ -107,7 +122,7 @@ func Unmarshal(data []byte, model interface{}) error {
 
 			out := reflect.New(modelVal).Interface()
 
-			err = unmarshalOne(resourceData, out)
+			err = unmarshalOne(resourceData, out, included)
 			if err != nil {
 				return err
 			}
@@ -126,7 +141,7 @@ func Unmarshal(data []byte, model interface{}) error {
 	return nil
 }
 
-func unmarshalOne(data map[string]interface{}, model interface{}) error {
+func unmarshalOne(data map[string]interface{}, model interface{}, included []interface{}) error {
 	modelVal := reflect.ValueOf(model)
 	modelType := reflect.TypeOf(model)
 
@@ -195,7 +210,7 @@ func unmarshalOne(data map[string]interface{}, model interface{}) error {
 			unmarshalAttributes(fieldType, fieldVal, resourceAttributes)
 		}
 		if relationshipsValid {
-			if err := unmarshalRelationships(fieldType, fieldVal, resourceRelationships); err != nil {
+			if err := unmarshalRelationships(fieldType, fieldVal, resourceRelationships, included); err != nil {
 				return err
 			}
 		}
@@ -480,14 +495,14 @@ func castPrimitivePointer(concreteKind reflect.Kind, concreteType reflect.Type, 
 	}
 }
 
-func unmarshalRelationships(fieldType reflect.StructField, fieldVal reflect.Value, resourceRelationships map[string]interface{}) error {
+func unmarshalRelationships(fieldType reflect.StructField, fieldVal reflect.Value, resourceRelationships map[string]interface{}, included []interface{}) error {
 	relationshipName := getAttributeName(fieldType)
 	if relationship, ok := resourceRelationships[relationshipName]; ok {
-		data, ok := relationship.(map[string]interface{})["data"]
+		data, ok := relationship.(map[string]interface{})["data"] //normalised data of relationship containing type and id / list of ids
 		if !ok {
 			return errors.New("invalid relationship data structure")
 		}
-		err := unmarshalSingleRelationship(fieldVal, data)
+		err := unmarshalSingleRelationship(fieldVal, data, included)
 		if err != nil {
 			return err
 		}
@@ -496,12 +511,14 @@ func unmarshalRelationships(fieldType reflect.StructField, fieldVal reflect.Valu
 	return nil
 }
 
-func unmarshalSingleRelationship(fieldVal reflect.Value, relationship interface{}) error {
+func unmarshalSingleRelationship(fieldVal reflect.Value, relationship interface{}, included []interface{}) error {
+	//relationship here should be extended with attributes and references from corresponding included if available
+
 	switch fieldVal.Kind() {
 	case reflect.Struct:
 		var toFillIn = reflect.New(fieldVal.Type())
 
-		if err := unmarshalOne(relationship.(map[string]interface{}), toFillIn.Interface()); err != nil {
+		if err := unmarshalOne(resolveRelationshipData(relationship.(map[string]interface{}), included), toFillIn.Interface(), included); err != nil {
 			return err
 		}
 
@@ -517,7 +534,7 @@ func unmarshalSingleRelationship(fieldVal reflect.Value, relationship interface{
 			return nil
 		}
 
-		if err := unmarshalOne(relationship.(map[string]interface{}), toFillIn.Interface()); err != nil {
+		if err := unmarshalOne(resolveRelationshipData(relationship.(map[string]interface{}), included), toFillIn.Interface(), included); err != nil {
 			return err
 		}
 
@@ -544,7 +561,7 @@ func unmarshalSingleRelationship(fieldVal reflect.Value, relationship interface{
 				toFillIn = reflect.New(fieldVal.Type().Elem().Elem())
 			}
 
-			if err := unmarshalOne(datapoint.(map[string]interface{}), toFillIn.Interface()); err != nil {
+			if err := unmarshalOne(resolveRelationshipData(datapoint.(map[string]interface{}), included), toFillIn.Interface(), included); err != nil {
 				return err
 			}
 
@@ -562,6 +579,24 @@ func unmarshalSingleRelationship(fieldVal reflect.Value, relationship interface{
 	default:
 		return errors.New("invalid relationship field type")
 	}
+}
+
+func resolveRelationshipData(referenceData map[string]interface{}, included []interface{}) map[string]interface{} {
+	referencedType := referenceData["type"]
+	referencedId := referenceData["id"]
+
+	for _, includedResource := range included {
+		includedResourceData, ok := includedResource.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		if includedResourceData["type"] == referencedType && includedResourceData["id"] == referencedId {
+			return includedResourceData
+		}
+	}
+
+	return referenceData
 }
 
 func getAttributeName(fieldType reflect.StructField) string {
