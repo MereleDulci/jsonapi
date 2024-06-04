@@ -2,7 +2,6 @@ package jsonapi
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 	"time"
 )
@@ -748,7 +747,6 @@ func TestMarshalMany(t *testing.T) {
 					t.Fatal("missing attributes")
 				}
 
-				fmt.Println(attrs)
 				if attrs.(map[string]interface{})["muted"] == "mute" {
 					t.Fatal("muted field should not be present")
 				}
@@ -1269,4 +1267,58 @@ func TestMarshalTime(t *testing.T) {
 		}
 
 	})
+}
+
+func TestMarshalRecursive(t *testing.T) {
+
+	t.Run("should correctly untangle single recursive references", func(t *testing.T) {
+		type Recursive struct {
+			ID  string     `jsonapi:"primary,base"`
+			Ref *Recursive `jsonapi:"relation,ref"`
+		}
+
+		a := Recursive{ID: "1"}
+		b := Recursive{ID: "2", Ref: &a}
+		a.Ref = &b
+
+		raw, err := Marshal(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		check := map[string]interface{}{}
+		if err := json.Unmarshal(raw, &check); err != nil {
+			t.Fatal(err)
+		}
+
+		if len(check["included"].([]interface{})) != 2 {
+			t.Fatal("unexpected number of included resources")
+		}
+	})
+
+	t.Run("should correctly untangle list recursive references", func(t *testing.T) {
+		type Recursive struct {
+			ID  string       `jsonapi:"primary,base"`
+			Ref []*Recursive `jsonapi:"relation,ref"`
+		}
+
+		a := Recursive{ID: "1"}
+		b := Recursive{ID: "2", Ref: []*Recursive{&a}}
+		a.Ref = []*Recursive{&b}
+
+		raw, err := Marshal(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		check := map[string]interface{}{}
+		if err := json.Unmarshal(raw, &check); err != nil {
+			t.Fatal(err)
+		}
+
+		if len(check["included"].([]interface{})) != 2 {
+			t.Fatal("unexpected number of included resources")
+		}
+	})
+
 }

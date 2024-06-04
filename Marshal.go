@@ -11,8 +11,22 @@ import (
 	"time"
 )
 
-//func MarshalWithoutIncluded(in interface{}) ([]byte, error) {
-//}
+type includesCache struct {
+	includes []reflect.Value
+}
+
+func (c *includesCache) add(v reflect.Value) {
+	c.includes = append(c.includes, v)
+}
+
+func (c *includesCache) contains(v reflect.Value) bool {
+	for _, i := range c.includes {
+		if i == v {
+			return true
+		}
+	}
+	return false
+}
 
 func Marshal(in interface{}) ([]byte, error) {
 	inVal := reflect.ValueOf(in)
@@ -41,7 +55,7 @@ func MarshalMany(in interface{}) ([]byte, error) {
 
 	allIncludes := make([]interface{}, 0)
 	for i := 0; i < inVal.Len(); i++ {
-		next, includes, err := marshalNode(inVal.Index(i).Interface())
+		next, includes, err := marshalNode(inVal.Index(i).Interface(), &includesCache{})
 		if err != nil {
 			return nil, err
 		}
@@ -60,7 +74,7 @@ func MarshalMany(in interface{}) ([]byte, error) {
 }
 
 func MarshalOne(in interface{}) ([]byte, error) {
-	doc, includes, err := marshalNode(in)
+	doc, includes, err := marshalNode(in, &includesCache{})
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +90,7 @@ func MarshalOne(in interface{}) ([]byte, error) {
 	return json.Marshal(out)
 }
 
-func marshalNode(node interface{}) (map[string]interface{}, []interface{}, error) {
+func marshalNode(node interface{}, refcache *includesCache) (map[string]interface{}, []interface{}, error) {
 	inType := reflect.TypeOf(node)
 	inVal := reflect.ValueOf(node)
 
@@ -97,7 +111,7 @@ func marshalNode(node interface{}) (map[string]interface{}, []interface{}, error
 	if err != nil {
 		return nil, nil, err
 	}
-	resourceRelationships, includes, err := getRelationships(inVal, inType)
+	resourceRelationships, includes, err := getRelationships(inVal, inType, refcache)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -317,7 +331,7 @@ func prepareAttributesNode(field reflect.Value) interface{} {
 	}
 }
 
-func getRelationships(inVal reflect.Value, inType reflect.Type) (map[string]interface{}, []interface{}, error) {
+func getRelationships(inVal reflect.Value, inType reflect.Type, refcache *includesCache) (map[string]interface{}, []interface{}, error) {
 	seen := make([]string, 0)
 	rels := map[string]interface{}{}
 	includes := make([]interface{}, 0)
@@ -328,7 +342,7 @@ func getRelationships(inVal reflect.Value, inType reflect.Type) (map[string]inte
 		if tag != "" {
 			parts := strings.Split(tag, ",")
 			if len(parts) > 0 && parts[0] == "relation" {
-				inner, include, err := prepareRelationshipNode(inVal.Field(i))
+				inner, include, err := prepareRelationshipNode(inVal.Field(i), refcache)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -357,10 +371,10 @@ func getRelationships(inVal reflect.Value, inType reflect.Type) (map[string]inte
 	return rels, includes, nil
 }
 
-func prepareRelationshipNode(topFieldValue reflect.Value) (interface{}, []interface{}, error) {
+func prepareRelationshipNode(topFieldValue reflect.Value, refcache *includesCache) (interface{}, []interface{}, error) {
 	switch topFieldValue.Kind() {
 	case reflect.Pointer:
-		return prepareRelationshipNode(topFieldValue.Elem())
+		return prepareRelationshipNode(topFieldValue.Elem(), refcache)
 	case reflect.Struct:
 		refType, err := getResourceType(topFieldValue, topFieldValue.Type())
 		if err != nil {
@@ -376,7 +390,13 @@ func prepareRelationshipNode(topFieldValue reflect.Value) (interface{}, []interf
 			"id":   refId,
 		}
 
-		includeNode, internalIncludes, err := marshalNode(topFieldValue.Interface())
+		//Breaks out of infinite recursion if there's a closed references loop in the provided structure
+		if refcache.contains(topFieldValue) {
+			return relation, nil, nil
+		}
+		refcache.add(topFieldValue)
+
+		includeNode, internalIncludes, err := marshalNode(topFieldValue.Interface(), refcache)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -387,7 +407,7 @@ func prepareRelationshipNode(topFieldValue reflect.Value) (interface{}, []interf
 		embed := make([]interface{}, topFieldValue.Len())
 		includes := make([]interface{}, 0)
 		for i := 0; i < topFieldValue.Len(); i++ {
-			next, include, err := prepareRelationshipNode(topFieldValue.Index(i))
+			next, include, err := prepareRelationshipNode(topFieldValue.Index(i), refcache)
 			if err != nil {
 				return nil, nil, err
 			}
