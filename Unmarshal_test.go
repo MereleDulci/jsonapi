@@ -1,7 +1,9 @@
 package jsonapi
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -610,4 +612,65 @@ func TestUnmarshalWithIncluded(t *testing.T) {
 		}
 
 	})
+}
+
+func TestUnmarshalStability(t *testing.T) {
+
+	t.Run("should not panic on mismatching type and return it as error value", func(t *testing.T) {
+
+		type Main struct {
+			ID     string  `jsonapi:"primary,mains"`
+			Float  float64 `jsonapi:"attr,float"`
+			String string  `jsonapi:"attr,string"`
+		}
+
+		floatIn := map[string]interface{}{
+			"data": map[string]interface{}{
+				"id":   "1",
+				"type": "mains",
+				"attributes": map[string]interface{}{
+					"float": "as-string",
+				},
+			},
+		}
+
+		floatMismatchRaw, err := json.Marshal(floatIn)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		out := &Main{}
+		err = Unmarshal(floatMismatchRaw, out)
+
+		if err == nil {
+			t.Errorf("expected error on float type mismatch")
+		}
+		if !strings.Contains(err.Error(), "unmarshal attribute float") {
+			t.Errorf("expected error to be related to float field unmarshal, got, %+v", err)
+		}
+
+		strIn := map[string]interface{}{
+			"data": map[string]interface{}{
+				"id":   "1",
+				"type": "mains",
+				"attributes": map[string]interface{}{
+					"string": 123,
+				},
+			},
+		}
+
+		stringMismatchRaw, err := json.Marshal(strIn)
+
+		err = Unmarshal(stringMismatchRaw, out)
+
+		if err == nil {
+			t.Errorf("expected error on string type mismatch")
+		}
+
+		if !strings.Contains(err.Error(), "unmarshal attribute string") {
+			t.Errorf("expected error to be related to string field unmarshal, got, %+v", err)
+		}
+
+	})
+
 }

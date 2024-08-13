@@ -141,7 +141,13 @@ func Unmarshal(data []byte, model interface{}) error {
 	return nil
 }
 
-func unmarshalOne(data map[string]interface{}, model interface{}, included []interface{}) error {
+func unmarshalOne(data map[string]interface{}, model interface{}, included []interface{}) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("recovered from: %w", r.(error))
+		}
+	}()
+
 	modelVal := reflect.ValueOf(model)
 	modelType := reflect.TypeOf(model)
 
@@ -222,6 +228,12 @@ func unmarshalOne(data map[string]interface{}, model interface{}, included []int
 
 func unmarshalAttributes(fieldType reflect.StructField, fieldVal reflect.Value, resourceAttributes map[string]interface{}) {
 	attributeName := getAttributeName(fieldType)
+
+	defer func() {
+		if r := recover(); r != nil {
+			panic(fmt.Errorf("unmarshal attribute %s: %w", attributeName, r.(error)))
+		}
+	}()
 	if attribute, ok := resourceAttributes[attributeName]; ok {
 		unmarshalSingleAttribute(fieldVal, attribute)
 	}
