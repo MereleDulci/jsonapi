@@ -90,6 +90,18 @@ func MarshalOne(in interface{}) ([]byte, error) {
 	return json.Marshal(out)
 }
 
+func MixInMeta(source []byte, meta map[string]interface{}) ([]byte, error) {
+	raw := make(map[string]interface{})
+	err := json.Unmarshal(source, &raw)
+	if err != nil {
+		return nil, err
+	}
+
+	raw["meta"] = meta
+
+	return json.Marshal(raw)
+}
+
 func marshalNode(node interface{}, refcache *includesCache) (map[string]interface{}, []interface{}, error) {
 	inType := reflect.TypeOf(node)
 	inVal := reflect.ValueOf(node)
