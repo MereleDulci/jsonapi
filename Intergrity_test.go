@@ -405,6 +405,14 @@ func TestStructTags(t *testing.T) {
 	})
 }
 
+type InvalidSerializable string
+
+const InvalidSerializableValue = "value"
+
+func (i InvalidSerializable) MarshalText() ([]byte, error) {
+	return []byte(i), nil
+}
+
 type StringSerializable [4]byte
 
 func (b StringSerializable) MarshalText() ([]byte, error) {

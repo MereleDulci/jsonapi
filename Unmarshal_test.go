@@ -673,4 +673,33 @@ func TestUnmarshalStability(t *testing.T) {
 
 	})
 
+	t.Run("should yield meaningful error if provided type is not deserializable", func(t *testing.T) {
+		type SUT struct {
+			ID  string              `jsonapi:"primary,sut"`
+			Val InvalidSerializable `jsonapi:"attr,val"`
+		}
+
+		input := &SUT{
+			ID:  "1",
+			Val: InvalidSerializableValue,
+		}
+
+		raw, err := Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		out, err := UnmarshalOneAsType(raw, reflect.TypeOf(new(SUT)))
+
+		if out != nil {
+			t.Errorf("expected no output, got %v", out)
+		}
+		if err == nil {
+			t.Errorf("expected error")
+		}
+
+		if !strings.Contains(err.Error(), "string is not assignable to type jsonapi.InvalidSerializable") {
+			t.Fatal(err)
+		}
+	})
 }

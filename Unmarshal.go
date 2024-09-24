@@ -178,7 +178,7 @@ func unmarshalOne(data map[string]interface{}, model interface{}, included []int
 				case "primary":
 					//Check provided model type matches
 					if parts[1] != resourceType {
-						return errors.New("resource type does not match model type")
+						return fmt.Errorf("resource type does not match model type, expect %s, got %s", parts[1], resourceType)
 					}
 					stringMarshallerType := reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
 
@@ -231,7 +231,12 @@ func unmarshalAttributes(fieldType reflect.StructField, fieldVal reflect.Value, 
 
 	defer func() {
 		if r := recover(); r != nil {
-			panic(fmt.Errorf("unmarshal attribute %s: %w", attributeName, r.(error)))
+			switch r.(type) {
+			case error:
+				panic(fmt.Errorf("unmarshal attribute %s: %w", attributeName, r.(error)))
+			default:
+				panic(fmt.Errorf("unmarshal attribute %s: %v", attributeName, r))
+			}
 		}
 	}()
 	if attribute, ok := resourceAttributes[attributeName]; ok {
