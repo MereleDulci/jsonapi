@@ -330,6 +330,28 @@ func unmarshalSingleAttribute(fieldVal reflect.Value, attribute interface{}) {
 		}
 
 		fieldVal.Set(reflect.ValueOf(sliceValuePtr.Interface()))
+	case reflect.Map:
+		//JSON only allows for string keys, so we can always expect string keys there and only need to deal with values
+		dataMap, ok := attribute.(map[string]interface{})
+		if !ok {
+			return
+		}
+
+		fieldValueKind := fieldVal.Type().Elem().Kind()
+		fieldValueType := fieldVal.Type().Elem()
+
+		reflection := reflect.MakeMap(reflect.MapOf(fieldVal.Type().Key(), fieldValueType))
+		reflectionValue := reflect.New(reflection.Type())
+		reflectionValue.Elem().Set(reflection)
+
+		mapPtr := reflect.ValueOf(reflectionValue.Interface())
+		mapValuePtr := mapPtr.Elem()
+
+		for key, value := range dataMap {
+			mapValuePtr.SetMapIndex(reflect.ValueOf(key), castPrimitive(fieldValueKind, fieldValueType, value))
+		}
+
+		fieldVal.Set(mapValuePtr)
 	default:
 		fieldVal.Set(castPrimitive(fieldVal.Kind(), fieldVal.Type(), attribute))
 	}
