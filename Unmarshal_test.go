@@ -227,12 +227,14 @@ func TestUnmarshalOne(t *testing.T) {
 
 	t.Run("should apply json.Unmarshaler if available", func(t *testing.T) {
 		type SUT struct {
-			ID  string `jsonapi:"primary,tests"`
-			Val nestedWithMarshalInner
-			Ref *nestedWithMarshalInner
+			ID      string `jsonapi:"primary,tests"`
+			Val     nestedWithMarshalInner
+			Ref     *nestedWithMarshalInner
+			ListVal []nestedWithMarshalInner
+			//ListRef []*nestedWithMarshalInner
 		}
 
-		raw := `{"data": {"type": "tests", "id": "1", "attributes": {"val": {"b": 1}, "ref": {"b": 2}}}}`
+		raw := `{"data": {"type": "tests", "id": "1", "attributes": {"val": {"b": 1}, "ref": {"b": 2}, "listVal": [{"b": 3}], "listRef": [{"b": 4}]}}}`
 		out := SUT{}
 		err := Unmarshal([]byte(raw), &out)
 		if err != nil {
@@ -244,6 +246,87 @@ func TestUnmarshalOne(t *testing.T) {
 
 		if out.Ref.A != 2 {
 			t.Fatal("unexpected attribute value")
+		}
+	})
+
+	t.Run("unmarshal of nested lists ", func(t *testing.T) {
+		type Nest struct {
+			A string
+		}
+
+		type SUT struct {
+			ID                string `jsonapi:"primary,tests"`
+			Val               []Nest
+			Ptr               []*Nest
+			ValWithMarshaller []nestedWithMarshalInner
+			PrtWithMarshaller []*nestedWithMarshalInner
+		}
+
+		input := SUT{
+			ID: "1",
+			Val: []Nest{
+				{A: "test"},
+			},
+			Ptr: []*Nest{
+				{A: "test"},
+			},
+			ValWithMarshaller: []nestedWithMarshalInner{
+				{A: 1},
+			},
+			PrtWithMarshaller: []*nestedWithMarshalInner{
+				{A: 1},
+			},
+		}
+
+		raw, err := Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		out := SUT{}
+		err = Unmarshal(raw, &out)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(out.Val) != len(input.Val) {
+			t.Errorf("expected %+v, got %+v", input.Val, out.Val)
+		}
+
+		for i, val := range input.Val {
+			if out.Val[i] != val {
+				t.Errorf("expected %+v, got %+v", input.Val[i], out.Val[i])
+			}
+		}
+
+		if len(out.Ptr) != len(input.Ptr) {
+			t.Errorf("expected %+v, got %+v", input.Ptr, out.Ptr)
+		}
+
+		for i, ptr := range input.Ptr {
+			if *out.Ptr[i] != *ptr {
+				t.Errorf("expected %+v, got %+v", input.Ptr[i], out.Ptr[i])
+			}
+		}
+
+		if len(out.ValWithMarshaller) != len(input.ValWithMarshaller) {
+			t.Errorf("expected %+v, got %+v", input.ValWithMarshaller, out.ValWithMarshaller)
+		}
+
+		for i, val := range input.ValWithMarshaller {
+			if out.ValWithMarshaller[i].A != val.A {
+				t.Errorf("expected %+v, got %+v", input.ValWithMarshaller[i], out.ValWithMarshaller[i])
+			}
+		}
+
+		if len(out.PrtWithMarshaller) != len(input.PrtWithMarshaller) {
+			t.Errorf("expected %+v, got %+v", input.PrtWithMarshaller, out.PrtWithMarshaller)
+		}
+
+		for i, ptr := range input.PrtWithMarshaller {
+			if out.PrtWithMarshaller[i].A != ptr.A {
+				t.Errorf("expected %+v, got %+v", input.PrtWithMarshaller[i], out.PrtWithMarshaller[i])
+			}
 		}
 	})
 }

@@ -231,7 +231,11 @@ func unmarshalAttributes(fieldType reflect.StructField, fieldVal reflect.Value, 
 
 	defer func() {
 		if r := recover(); r != nil {
-			panic(fmt.Errorf("unmarshal attribute %s: %w", attributeName, r.(error)))
+			e, ok := r.(error)
+			if !ok {
+				e = errors.New(fmt.Sprint(r))
+			}
+			panic(fmt.Errorf("unmarshal attribute %s: %w", attributeName, e))
 		}
 	}()
 	if attribute, ok := resourceAttributes[attributeName]; ok {
@@ -243,59 +247,9 @@ func unmarshalSingleAttribute(fieldVal reflect.Value, attribute interface{}) {
 
 	switch fieldVal.Kind() {
 	case reflect.Struct:
-		isHandled, err := unmarshalTime(fieldVal, attribute)
-		if err != nil {
-			panic(err)
-		}
-		if isHandled {
-			return
-		}
-		isHandled, err = unmarshalUnmarshaler(fieldVal, attribute)
-		if err != nil {
-			panic(err)
-		}
-		if isHandled {
-			return
-		}
-
-		var toFillIn = reflect.New(fieldVal.Type())
-
-		for i := 0; i < toFillIn.Elem().NumField(); i++ {
-			nextFieldType := toFillIn.Elem().Type().Field(i)
-			nextFieldVal := toFillIn.Elem().Field(i)
-			unmarshalAttributes(nextFieldType, nextFieldVal, attribute.(map[string]interface{}))
-		}
-
-		fieldVal.Set(toFillIn.Elem())
+		unmarshalSingleStruct(fieldVal, attribute)
 	case reflect.Pointer:
-
-		isHandled, err := unmarshalTime(fieldVal, attribute)
-		if err != nil {
-			panic(err)
-		}
-		if isHandled {
-			return
-		}
-		isHandled, err = unmarshalUnmarshaler(fieldVal, attribute)
-		if err != nil {
-			panic(err)
-		}
-		if isHandled {
-			return
-		}
-		toFillIn := reflect.New(fieldVal.Type().Elem())
-
-		if fieldVal.Type().Elem().Kind() == reflect.Struct {
-			for i := 0; i < toFillIn.Elem().NumField(); i++ {
-				nextFieldType := toFillIn.Elem().Type().Field(i)
-				nextFieldVal := toFillIn.Elem().Field(i)
-				unmarshalAttributes(nextFieldType, nextFieldVal, attribute.(map[string]interface{}))
-			}
-		} else {
-			toFillIn.Elem().Set(castPrimitive(fieldVal.Type().Elem().Kind(), fieldVal.Type(), attribute))
-		}
-
-		fieldVal.Set(toFillIn)
+		unmarshalSinglePointer(fieldVal, attribute)
 	case reflect.Slice:
 		dataSlice, ok := attribute.([]interface{})
 		if !ok {
@@ -316,7 +270,18 @@ func unmarshalSingleAttribute(fieldVal reflect.Value, attribute interface{}) {
 			var primitiveVal reflect.Value
 
 			if fieldValueKind == reflect.Ptr {
-				primitiveVal = castPrimitivePointer(fieldValueType.Elem().Kind(), fieldValueType, datapoint)
+				if fieldValueType.Elem().Kind() == reflect.Struct {
+					primitiveVal = reflect.New(fieldValueType.Elem()).Elem()
+					//Operates on struct so that it's addressable
+					unmarshalSingleStruct(primitiveVal, datapoint)
+					//Wrap it back as pointer
+					primitiveVal = primitiveVal.Addr()
+				} else {
+					primitiveVal = castPrimitivePointer(fieldValueType.Elem().Kind(), fieldValueType, datapoint)
+				}
+			} else if fieldValueKind == reflect.Struct {
+				primitiveVal = reflect.New(fieldValueType).Elem()
+				unmarshalSingleStruct(primitiveVal, datapoint)
 			} else {
 				primitiveVal = castPrimitive(fieldValueKind, fieldValueType, datapoint)
 			}
@@ -328,7 +293,63 @@ func unmarshalSingleAttribute(fieldVal reflect.Value, attribute interface{}) {
 	default:
 		fieldVal.Set(castPrimitive(fieldVal.Kind(), fieldVal.Type(), attribute))
 	}
+}
 
+func unmarshalSingleStruct(fieldVal reflect.Value, attribute interface{}) {
+	isHandled, err := unmarshalTime(fieldVal, attribute)
+	if err != nil {
+		panic(err)
+	}
+	if isHandled {
+		return
+	}
+	isHandled, err = unmarshalUnmarshaler(fieldVal, attribute)
+	if err != nil {
+		panic(err)
+	}
+	if isHandled {
+		return
+	}
+
+	var toFillIn = reflect.New(fieldVal.Type())
+
+	for i := 0; i < toFillIn.Elem().NumField(); i++ {
+		nextFieldType := toFillIn.Elem().Type().Field(i)
+		nextFieldVal := toFillIn.Elem().Field(i)
+		unmarshalAttributes(nextFieldType, nextFieldVal, attribute.(map[string]interface{}))
+	}
+
+	fieldVal.Set(toFillIn.Elem())
+}
+
+func unmarshalSinglePointer(fieldVal reflect.Value, attribute interface{}) {
+	isHandled, err := unmarshalTime(fieldVal, attribute)
+	if err != nil {
+		panic(err)
+	}
+	if isHandled {
+		return
+	}
+	isHandled, err = unmarshalUnmarshaler(fieldVal, attribute)
+	if err != nil {
+		panic(err)
+	}
+	if isHandled {
+		return
+	}
+	toFillIn := reflect.New(fieldVal.Type().Elem())
+
+	if fieldVal.Type().Elem().Kind() == reflect.Struct {
+		for i := 0; i < toFillIn.Elem().NumField(); i++ {
+			nextFieldType := toFillIn.Elem().Type().Field(i)
+			nextFieldVal := toFillIn.Elem().Field(i)
+			unmarshalAttributes(nextFieldType, nextFieldVal, attribute.(map[string]interface{}))
+		}
+	} else {
+		toFillIn.Elem().Set(castPrimitive(fieldVal.Type().Elem().Kind(), fieldVal.Type(), attribute))
+	}
+
+	fieldVal.Set(toFillIn)
 }
 
 func unmarshalTime(fieldVal reflect.Value, attribute interface{}) (bool, error) {
