@@ -2,6 +2,7 @@ package jsonapi
 
 import (
 	"encoding/json"
+	"maps"
 	"reflect"
 	"strings"
 	"testing"
@@ -599,6 +600,142 @@ func TestUnmarshalTime(t *testing.T) {
 	})
 }
 
+func TestUnmarshalMap(t *testing.T) {
+	t.Run("should correct unmarshal non-nil maps", func(t *testing.T) {
+		type SUT struct {
+			ID string `jsonapi:"primary,test"`
+			M  map[string]interface{}
+		}
+
+		s := SUT{
+			ID: "1",
+			M: map[string]interface{}{
+				"s": "test",
+				"f": 1.1,
+				"b": true,
+			},
+		}
+
+		raw, err := Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		out := SUT{}
+		err = Unmarshal(raw, &out)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !maps.Equal(s.M, out.M) {
+			t.Errorf("expected %+v, got %+v", s.M, out.M)
+		}
+	})
+
+	t.Run("casts integer values of interface{} map to float", func(t *testing.T) {
+		type SUT struct {
+			ID string `jsonapi:"primary,test"`
+			M  map[string]interface{}
+		}
+
+		s := SUT{
+			ID: "1",
+			M: map[string]interface{}{
+				"i": 1,
+			},
+		}
+
+		raw, err := Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		out := SUT{}
+		err = Unmarshal(raw, &out)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		cast, ok := out.M["i"].(float64)
+		if cast != 1 {
+			t.Errorf("expected 1, got %v", out.M["i"])
+		}
+		if !ok {
+			t.Errorf("expected cast to float64, got %T", out.M["i"])
+		}
+	})
+
+	t.Run("should correctly unmarshal nil map", func(t *testing.T) {
+		type SUT struct {
+			ID string `jsonapi:"primary,test"`
+			M  map[string]interface{}
+		}
+
+		s := SUT{
+			ID: "1",
+		}
+
+		raw, err := Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		out := SUT{}
+		err = Unmarshal(raw, &out)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if out.M != nil {
+			t.Errorf("expected nil map, got %+v", out.M)
+		}
+	})
+
+	t.Run("should correctly marshal typed map values", func(t *testing.T) {
+		type SUT struct {
+			ID string `jsonapi:"primary,test"`
+			Ms map[string]string
+			Mi map[string]int
+			Mf map[string]float64
+		}
+
+		s := SUT{
+			ID: "1",
+			Ms: map[string]string{
+				"s": "test",
+			},
+			Mi: map[string]int{
+				"i": 1,
+			},
+			Mf: map[string]float64{
+				"f": 1.1,
+			},
+		}
+
+		raw, err := Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		out := SUT{}
+		err = Unmarshal(raw, &out)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !maps.Equal(s.Ms, out.Ms) {
+			t.Errorf("expected %+v, got %+v", s.Ms, out.Ms)
+		}
+
+		if !maps.Equal(s.Mi, out.Mi) {
+			t.Errorf("expected %+v, got %+v", s.Mi, out.Mi)
+		}
+		if !maps.Equal(s.Mf, out.Mf) {
+			t.Errorf("expected %+v, got %+v", s.Mf, out.Mf)
+		}
+	})
+}
+
 func TestUnmarshalWithIncluded(t *testing.T) {
 
 	t.Run("should correctly unmarshal included doc into a single value", func(t *testing.T) {
@@ -756,4 +893,33 @@ func TestUnmarshalStability(t *testing.T) {
 
 	})
 
+	t.Run("should yield meaningful error if provided type is not deserializable", func(t *testing.T) {
+		type SUT struct {
+			ID  string              `jsonapi:"primary,sut"`
+			Val InvalidSerializable `jsonapi:"attr,val"`
+		}
+
+		input := &SUT{
+			ID:  "1",
+			Val: InvalidSerializableValue,
+		}
+
+		raw, err := Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		out, err := UnmarshalOneAsType(raw, reflect.TypeOf(new(SUT)))
+
+		if out != nil {
+			t.Errorf("expected no output, got %v", out)
+		}
+		if err == nil {
+			t.Errorf("expected error")
+		}
+
+		if !strings.Contains(err.Error(), "string is not assignable to type jsonapi.InvalidSerializable") {
+			t.Fatal(err)
+		}
+	})
 }

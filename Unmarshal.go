@@ -178,7 +178,7 @@ func unmarshalOne(data map[string]interface{}, model interface{}, included []int
 				case "primary":
 					//Check provided model type matches
 					if parts[1] != resourceType {
-						return errors.New("resource type does not match model type")
+						return fmt.Errorf("resource type does not match model type, expect %s, got %s", parts[1], resourceType)
 					}
 					stringMarshallerType := reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
 
@@ -231,11 +231,12 @@ func unmarshalAttributes(fieldType reflect.StructField, fieldVal reflect.Value, 
 
 	defer func() {
 		if r := recover(); r != nil {
-			e, ok := r.(error)
-			if !ok {
-				e = errors.New(fmt.Sprint(r))
+			switch r.(type) {
+			case error:
+				panic(fmt.Errorf("unmarshal attribute %s: %w", attributeName, r.(error)))
+			default:
+				panic(fmt.Errorf("unmarshal attribute %s: %v", attributeName, r))
 			}
-			panic(fmt.Errorf("unmarshal attribute %s: %w", attributeName, e))
 		}
 	}()
 	if attribute, ok := resourceAttributes[attributeName]; ok {
@@ -290,6 +291,28 @@ func unmarshalSingleAttribute(fieldVal reflect.Value, attribute interface{}) {
 		}
 
 		fieldVal.Set(reflect.ValueOf(sliceValuePtr.Interface()))
+	case reflect.Map:
+		//JSON only allows for string keys, so we can always expect string keys there and only need to deal with values
+		dataMap, ok := attribute.(map[string]interface{})
+		if !ok {
+			return
+		}
+
+		fieldValueKind := fieldVal.Type().Elem().Kind()
+		fieldValueType := fieldVal.Type().Elem()
+
+		reflection := reflect.MakeMap(reflect.MapOf(fieldVal.Type().Key(), fieldValueType))
+		reflectionValue := reflect.New(reflection.Type())
+		reflectionValue.Elem().Set(reflection)
+
+		mapPtr := reflect.ValueOf(reflectionValue.Interface())
+		mapValuePtr := mapPtr.Elem()
+
+		for key, value := range dataMap {
+			mapValuePtr.SetMapIndex(reflect.ValueOf(key), castPrimitive(fieldValueKind, fieldValueType, value))
+		}
+
+		fieldVal.Set(mapValuePtr)
 	default:
 		fieldVal.Set(castPrimitive(fieldVal.Kind(), fieldVal.Type(), attribute))
 	}

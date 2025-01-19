@@ -1322,3 +1322,46 @@ func TestMarshalRecursive(t *testing.T) {
 	})
 
 }
+
+func TestMixInMeta(t *testing.T) {
+
+	t.Run("should correctly extend the result with metadata", func(t *testing.T) {
+		type Doc struct {
+			ID string `jsonapi:"primary,collection"`
+		}
+
+		docs := []Doc{
+			{ID: "1"},
+			{ID: "2"},
+		}
+
+		raw, err := MarshalMany(docs)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		ext := map[string]interface{}{
+			"page":  1,
+			"count": 100,
+		}
+
+		extended, err := MixInMeta(raw, ext)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		check := map[string]interface{}{}
+		if err := json.Unmarshal(extended, &check); err != nil {
+			t.Fatal(err)
+		}
+
+		if check["meta"].(map[string]interface{})["page"] != float64(1) {
+			t.Fatal("unexpected metadata value")
+		}
+		if check["meta"].(map[string]interface{})["count"] != float64(100) {
+			t.Fatal("unexpected metadata value")
+		}
+
+	})
+}
