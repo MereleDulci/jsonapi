@@ -10,13 +10,15 @@ func TestUnmarshalPatches(t *testing.T) {
 	t.Run("should unmarshal primitives", func(t *testing.T) {
 		raw := `[
 			{"op": "replace", "path": "/int", "value": 1},
-			{"op": "replace", "path": "/str", "value": "test"}
+			{"op": "replace", "path": "/str", "value": "test"},
+			{"op": "replace", "path": "/bool", "value": true}
 		]`
 
 		type SUT struct {
-			ID  string `jsonapi:"primary,tests"`
-			Int int    `jsonapi:"attr,int"`
-			Str string `jsonapi:"attr,str"`
+			ID   string `jsonapi:"primary,tests"`
+			Int  int    `jsonapi:"attr,int"`
+			Str  string `jsonapi:"attr,str"`
+			Bool bool   `jsonapi:"attr,bool"`
 		}
 
 		parsed, err := UnmarshalPatches([]byte(raw), reflect.TypeOf(new(SUT)))
@@ -24,8 +26,8 @@ func TestUnmarshalPatches(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if len(parsed) != 2 {
-			t.Fatalf("expected 2 patches, got %d", len(parsed))
+		if len(parsed) != 3 {
+			t.Fatalf("expected 3 patches, got %d", len(parsed))
 		}
 
 		if parsed[0].Value.(int) != 1 {
@@ -33,6 +35,9 @@ func TestUnmarshalPatches(t *testing.T) {
 		}
 		if parsed[1].Value.(string) != "test" {
 			t.Fatalf("expected test, got %v", parsed[1].Value)
+		}
+		if parsed[2].Value.(bool) != true {
+			t.Fatalf("expected true, got %v", parsed[2].Value)
 		}
 	})
 
@@ -78,6 +83,37 @@ func TestUnmarshalPatches(t *testing.T) {
 		checktime := time.Date(2023, 10, 1, 0, 0, 0, 0, time.UTC)
 		if parsed[2].Value.(time.Time) != checktime {
 			t.Fatalf("expected 2023-10-01T00:00:00Z, got %v", parsed[2].Value)
+		}
+	})
+
+	t.Run("should correctly unmarshal values targeting field of embedded structs", func(t *testing.T) {
+		raw := `[
+			{"op": "replace", "path": "/struct/a", "value": 1},
+			{"op": "replace", "path": "/ptr/a", "value": 1}
+		]`
+		type Inner struct {
+			A int `json:"a"`
+		}
+		type SUT struct {
+			ID     string `jsonapi:"primary,tests"`
+			Struct Inner  `jsonapi:"attr,struct"`
+			Ptr    *Inner `jsonapi:"attr,ptr"`
+		}
+
+		parsed, err := UnmarshalPatches([]byte(raw), reflect.TypeOf(new(SUT)))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(parsed) != 2 {
+			t.Fatalf("expected 1 patch, got %d", len(parsed))
+		}
+
+		if parsed[0].Value.(int) != 1 {
+			t.Fatalf("expected 1, got %v", parsed[0].Value)
+		}
+		if parsed[1].Value.(int) != 1 {
+			t.Fatalf("expected 1, got %v", parsed[1].Value)
 		}
 	})
 

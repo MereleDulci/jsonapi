@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 )
 
@@ -33,23 +34,22 @@ func UnmarshalPatches(data []byte, model reflect.Type) (patches []PatchOp, err e
 	}
 
 	for i, patch := range patches {
+		if patch.Op == "" {
+			return nil, errors.New("invalid patch operation")
+		}
+		if !slices.Contains([]string{"replace", "test"}, patch.Op) {
+			continue //Other operations will need special treatment
+		}
+
 		if patch.Path == "" {
 			return nil, errors.New("invalid patch operation")
 		}
 
-		if patch.Op == "" {
-			return nil, errors.New("invalid patch operation")
-		}
+		patchPathParts := strings.Split(strings.TrimPrefix(patch.Path, "/"), "/")
 
-		var fieldVal reflect.Value
-		for i := 0; i < modelVal.Elem().NumField(); i++ {
-			field := modelVal.Elem().Type().Field(i)
-			attrName := getAttributeName(field)
-
-			if attrName == strings.TrimPrefix(patch.Path, "/") {
-				fieldVal = modelVal.Elem().Field(i)
-				break
-			}
+		fieldVal, err := digIn(modelVal, patchPathParts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to dig into patch path: %w", err)
 		}
 
 		unmarshalSingleAttribute(fieldVal, patch.Value)
@@ -57,4 +57,28 @@ func UnmarshalPatches(data []byte, model reflect.Type) (patches []PatchOp, err e
 	}
 
 	return patches, nil
+}
+
+func digIn(modelVal reflect.Value, pathParts []string) (reflect.Value, error) {
+	var fieldVal reflect.Value
+	for i := 0; i < modelVal.Elem().NumField(); i++ {
+		field := modelVal.Elem().Type().Field(i)
+		attrName := getAttributeName(field)
+
+		if attrName == pathParts[0] {
+			fieldVal = modelVal.Elem().Field(i)
+			break
+		}
+	}
+
+	if len(pathParts) > 1 {
+		if fieldVal.Kind() == reflect.Ptr {
+			return digIn(reflect.New(fieldVal.Type().Elem()), pathParts[1:])
+		}
+		if fieldVal.Kind() == reflect.Struct {
+			return digIn(reflect.New(fieldVal.Type()), pathParts[1:])
+		}
+	}
+
+	return fieldVal, nil
 }
