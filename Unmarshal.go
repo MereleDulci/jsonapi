@@ -364,15 +364,19 @@ func unmarshalSinglePointer(fieldVal reflect.Value, attribute interface{}) {
 
 	if fieldVal.Type().Elem().Kind() == reflect.Struct {
 		for i := 0; i < toFillIn.Elem().NumField(); i++ {
-			nextFieldType := toFillIn.Elem().Type().Field(i)
-			nextFieldVal := toFillIn.Elem().Field(i)
-			unmarshalAttributes(nextFieldType, nextFieldVal, attribute.(map[string]interface{}))
+			//pointer can be to nil which is legit in this scenario
+			//Should leave as zero value in this case
+			if attribute != nil {
+				nextFieldType := toFillIn.Elem().Type().Field(i)
+				nextFieldVal := toFillIn.Elem().Field(i)
+				unmarshalAttributes(nextFieldType, nextFieldVal, attribute.(map[string]interface{}))
+				fieldVal.Set(toFillIn)
+			}
 		}
 	} else {
 		toFillIn.Elem().Set(castPrimitive(fieldVal.Type().Elem().Kind(), fieldVal.Type(), attribute))
+		fieldVal.Set(toFillIn)
 	}
-
-	fieldVal.Set(toFillIn)
 }
 
 func unmarshalTime(fieldVal reflect.Value, attribute interface{}) (bool, error) {
