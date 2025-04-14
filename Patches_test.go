@@ -145,4 +145,39 @@ func TestUnmarshalPatches(t *testing.T) {
 			t.Fatalf("expected nil, got %v", parsed[0].Value)
 		}
 	})
+
+	t.Run("should correctly unmarshal references", func(t *testing.T) {
+		//patches are limited to update reference ids only, not the properties of the related object
+		raw := `[
+			{"op": "replace", "path": "/byRef", "value": "1"},
+			{"op": "replace", "path": "/byVal", "value": "2"}
+		]`
+		type Referenced struct {
+			ID  string `jsonapi:"primary,referenced"`
+			Any string `jsonapi:"attr,any"`
+		}
+
+		type SUT struct {
+			ID    string      `jsonapi:"primary,tests"`
+			ByRef *Referenced `jsonapi:"relation,byRef"`
+			ByVal Referenced  `jsonapi:"relation,byVal"`
+		}
+
+		parsed, err := UnmarshalPatches([]byte(raw), reflect.TypeOf(new(SUT)))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(parsed) != 2 {
+			t.Fatalf("expected 2 patches, got %d", len(parsed))
+		}
+
+		if parsed[0].Value.(string) != "1" {
+			t.Fatalf("expected \"1\", got %v", parsed[0].Value)
+		}
+
+		if parsed[1].Value.(string) != "2" {
+			t.Fatalf("expected \"2\", got %v", parsed[1].Value)
+		}
+	})
 }

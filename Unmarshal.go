@@ -678,3 +678,13 @@ func getAttributeName(fieldType reflect.StructField) string {
 
 	return toCamelCase(fieldType.Name)
 }
+
+func getJsonapiFieldType(fieldType reflect.StructField) string {
+	jsonapitag := fieldType.Tag.Get("jsonapi")
+	if jsonapitag != "" {
+		parts := strings.Split(jsonapitag, ",")
+		return parts[0]
+	}
+
+	return ""
+}

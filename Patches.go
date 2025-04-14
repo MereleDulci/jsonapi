@@ -28,6 +28,16 @@ func UnmarshalPatches(data []byte, model reflect.Type) (patches []PatchOp, err e
 		return nil, err
 	}
 
+	return UnmarshalPatchesSlice(patches, model)
+}
+
+func UnmarshalPatchesSlice(patches []PatchOp, model reflect.Type) (out []PatchOp, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("recovered from: %w", r.(error))
+		}
+	}()
+
 	modelVal := reflect.New(model.Elem())
 	if modelVal.Kind() != reflect.Ptr && modelVal.Elem().Kind() != reflect.Struct {
 		return nil, errors.New("invalid model type")
@@ -52,8 +62,10 @@ func UnmarshalPatches(data []byte, model reflect.Type) (patches []PatchOp, err e
 			return nil, fmt.Errorf("failed to dig into patch path: %w", err)
 		}
 
-		unmarshalSingleAttribute(fieldVal, patch.Value)
-		patches[i].Value = fieldVal.Interface()
+		if fieldVal.IsValid() {
+			unmarshalSingleAttribute(fieldVal, patch.Value)
+			patches[i].Value = fieldVal.Interface()
+		}
 	}
 
 	return patches, nil
@@ -63,11 +75,15 @@ func digIn(modelVal reflect.Value, pathParts []string) (reflect.Value, error) {
 	var fieldVal reflect.Value
 	for i := 0; i < modelVal.Elem().NumField(); i++ {
 		field := modelVal.Elem().Type().Field(i)
-		attrName := getAttributeName(field)
-
-		if attrName == pathParts[0] {
-			fieldVal = modelVal.Elem().Field(i)
-			break
+		jsonapiType := getJsonapiFieldType(field)
+		if jsonapiType == "attr" || jsonapiType == "" {
+			//Only handle explicit and implicit attributes
+			//Primary cannot be patched, reference types are managed on the application level
+			attrName := getAttributeName(field)
+			if attrName == pathParts[0] {
+				fieldVal = modelVal.Elem().Field(i)
+				break
+			}
 		}
 	}
 
