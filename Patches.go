@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"slices"
 	"strings"
 )
 
@@ -16,12 +15,6 @@ type PatchOp struct {
 }
 
 func UnmarshalPatches(data []byte, model reflect.Type) (patches []PatchOp, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("recovered from: %w", r.(error))
-		}
-	}()
-
 	patches = make([]PatchOp, 0)
 	err = json.Unmarshal(data, &patches)
 	if err != nil {
@@ -34,7 +27,7 @@ func UnmarshalPatches(data []byte, model reflect.Type) (patches []PatchOp, err e
 func UnmarshalPatchesSlice(patches []PatchOp, model reflect.Type) (out []PatchOp, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("recovered from: %w", r.(error))
+			err = fmt.Errorf("[jsonapi.UnmarshalPatchesSlice] recovered from: %w", r.(error))
 		}
 	}()
 
@@ -44,27 +37,59 @@ func UnmarshalPatchesSlice(patches []PatchOp, model reflect.Type) (out []PatchOp
 	}
 
 	for i, patch := range patches {
-		if patch.Op == "" {
+		switch patch.Op {
+		case "replace", "test":
+			if patch.Path == "" {
+				return nil, errors.New("invalid patch operation")
+			}
+
+			patchPathParts := strings.Split(strings.TrimPrefix(patch.Path, "/"), "/")
+
+			fieldVal, err := digIn(modelVal, patchPathParts)
+			if err != nil {
+				return nil, fmt.Errorf("failed to dig into patch path: %w", err)
+			}
+
+			if fieldVal.IsValid() {
+				unmarshalSingleAttribute(fieldVal, patch.Value)
+				patches[i].Value = fieldVal.Interface()
+			}
+		case "add":
+			//Applicable to lists only, so need to validate the targets
+			patchPathParts := strings.Split(strings.TrimPrefix(patch.Path, "/"), "/")
+			fieldVal, err := digIn(modelVal, patchPathParts)
+			if err != nil {
+				return nil, fmt.Errorf("failed to dig into patch path: %w", err)
+			}
+
+			if fieldVal.IsValid() {
+				fieldType := fieldVal.Type()
+				isPtr := fieldType.Kind() == reflect.Ptr
+
+				if isPtr {
+					fieldType = fieldType.Elem()
+				}
+
+				if fieldType.Kind() == reflect.Slice {
+					fieldPrimitiveType := fieldVal.Type().Elem()
+					if isPtr {
+						//fieldPrimitiveType is []T, need to step into T
+						fieldPrimitiveType = fieldPrimitiveType.Elem()
+					}
+					fieldPrimitiveVal := reflect.New(fieldPrimitiveType).Elem()
+
+					unmarshalSingleAttribute(fieldPrimitiveVal, patch.Value)
+					patches[i].Value = fieldPrimitiveVal.Interface()
+				} else {
+					return nil, errors.New("invalid patch operation - target field is not a slice")
+				}
+			} else {
+				return nil, errors.New("invalid patch operation")
+			}
+		case "":
 			return nil, errors.New("invalid patch operation")
-		}
-		if !slices.Contains([]string{"replace", "test"}, patch.Op) {
-			continue //Other operations will need special treatment
-		}
-
-		if patch.Path == "" {
-			return nil, errors.New("invalid patch operation")
-		}
-
-		patchPathParts := strings.Split(strings.TrimPrefix(patch.Path, "/"), "/")
-
-		fieldVal, err := digIn(modelVal, patchPathParts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to dig into patch path: %w", err)
-		}
-
-		if fieldVal.IsValid() {
-			unmarshalSingleAttribute(fieldVal, patch.Value)
-			patches[i].Value = fieldVal.Interface()
+		default:
+			continue //Stepping over other options for now for compatibility
 		}
 	}
 

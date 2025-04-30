@@ -144,7 +144,7 @@ func Unmarshal(data []byte, model interface{}) error {
 func unmarshalOne(data map[string]interface{}, model interface{}, included []interface{}) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("recovered from: %w", r.(error))
+			err = fmt.Errorf("[jsonapi.unmarshalOne] recovered from: %w", r.(error))
 		}
 	}()
 
