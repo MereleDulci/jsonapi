@@ -24,3 +24,15 @@ func (n *nestedWithMarshalInner) UnmarshalJSON(data []byte) error {
 	n.A = aux.B
 	return nil
 }
+
+type CircularA struct {
+	ID  string     `jsonapi:"primary,circular-a"`
+	Val string     `jsonapi:"attr,val"`
+	B   *CircularB `jsonapi:"relation,b"`
+}
+
+type CircularB struct {
+	ID  string     `jsonapi:"primary,circular-b"`
+	Val string     `jsonapi:"attr,val"`
+	A   *CircularA `jsonapi:"relation,a"`
+}

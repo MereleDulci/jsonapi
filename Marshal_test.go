@@ -1145,6 +1145,64 @@ func TestMarshalRelationshipDeduplication(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("should keep attributes in case of circular references", func(t *testing.T) {
+
+		type SUT struct {
+			ID       string     `jsonapi:"primary,mains"`
+			Circular *CircularA `jsonapi:"relation,circular"`
+		}
+
+		input := SUT{
+			ID: "main-id",
+			Circular: &CircularA{
+				ID: "1",
+				B: &CircularB{
+					ID:  "2",
+					Val: "b",
+					A: &CircularA{
+						ID:  "1",
+						Val: "a",
+					},
+				},
+			},
+		}
+
+		raw, err := Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		check := map[string]interface{}{}
+		if err := json.Unmarshal(raw, &check); err != nil {
+			t.Fatal(err)
+		}
+
+		included := check["included"].([]interface{})
+		if len(included) != 2 {
+			t.Fatalf("unexpected number of included resources, got %v", len(check["included"].([]interface{})))
+		}
+
+		//Val on A should still be set
+		var a map[string]interface{}
+		for _, viface := range included {
+			v := viface.(map[string]interface{})
+			if v["type"] == "circular-a" && v["id"] == "1" {
+				a = v
+			}
+		}
+
+		if a == nil {
+			t.Fatal("missing included resource")
+		}
+		if a["attributes"].(map[string]interface{})["val"] != "a" {
+			t.Fatal("erased attribute value")
+		}
+
+		if a["relationships"].(map[string]interface{})["b"].(map[string]interface{})["data"] == nil {
+			t.Fatal("erased relationship value")
+		}
+	})
 }
 
 func TestMarshalID(t *testing.T) {
@@ -1363,5 +1421,139 @@ func TestMixInMeta(t *testing.T) {
 			t.Fatal("unexpected metadata value")
 		}
 
+	})
+}
+
+func Test_shallowMerge(t *testing.T) {
+	t.Run("should fill in non-zero values from both maps", func(t *testing.T) {
+		a := map[string]interface{}{
+			"key1": "value1",
+			"key2": "",
+			"key3": 0,
+		}
+		b := map[string]interface{}{
+			"key2": "value2",
+			"key3": 3,
+			"key4": nil,
+		}
+
+		result := shallowMerge(a, b, isAttributeZero)
+
+		expected := map[string]interface{}{
+			"key1": "value1",
+			"key2": "value2",
+			"key3": 3,
+		}
+
+		if len(result) != len(expected) {
+			t.Fatalf("expected %d keys, got %d", len(expected), len(result))
+		}
+
+		for k, v := range expected {
+			if result[k] != v {
+				t.Fatalf("expected %v for key %s, got %v", v, k, result[k])
+			}
+		}
+	})
+
+	t.Run("should handle empty maps", func(t *testing.T) {
+		a := map[string]interface{}{}
+		b := map[string]interface{}{
+			"key1": "value1",
+		}
+
+		result := shallowMerge(a, b, isAttributeZero)
+
+		expected := map[string]interface{}{
+			"key1": "value1",
+		}
+
+		if len(result) != len(expected) {
+			t.Fatalf("expected %d keys, got %d", len(expected), len(result))
+		}
+
+		for k, v := range expected {
+			if result[k] != v {
+				t.Fatalf("expected %v for key %s, got %v", v, k, result[k])
+			}
+		}
+	})
+
+	t.Run("should handle nil values correctly", func(t *testing.T) {
+		a := map[string]interface{}{
+			"key1": nil,
+		}
+		b := map[string]interface{}{
+			"key1": "value1",
+		}
+
+		result := shallowMerge(a, b, isAttributeZero)
+
+		expected := map[string]interface{}{
+			"key1": "value1",
+		}
+
+		if len(result) != len(expected) {
+			t.Fatalf("expected %d keys, got %d", len(expected), len(result))
+		}
+
+		for k, v := range expected {
+			if result[k] != v {
+				t.Fatalf("expected %v for key %s, got %v", v, k, result[k])
+			}
+		}
+	})
+}
+
+func Test_isRelationshipZero(t *testing.T) {
+	t.Run("should return true for nil data", func(t *testing.T) {
+		rel := map[string]interface{}{}
+		if !isRelationshipZero(rel) {
+			t.Fatal("expected true for nil data")
+		}
+	})
+
+	t.Run("should return true for empty map data", func(t *testing.T) {
+		rel := map[string]interface{}{
+			"data": map[string]interface{}{},
+		}
+		if !isRelationshipZero(rel) {
+			t.Fatal("expected true for empty map data")
+		}
+	})
+
+	t.Run("should return true for empty slice data", func(t *testing.T) {
+		rel := map[string]interface{}{
+			"data": []interface{}{},
+		}
+		if !isRelationshipZero(rel) {
+			t.Fatal("expected true for empty slice data")
+		}
+	})
+
+	t.Run("should return false for non-empty map data", func(t *testing.T) {
+		rel := map[string]interface{}{
+			"data": map[string]interface{}{
+				"id":   "1",
+				"type": "example",
+			},
+		}
+		if isRelationshipZero(rel) {
+			t.Fatal("expected false for non-empty map data")
+		}
+	})
+
+	t.Run("should return false for non-empty slice data", func(t *testing.T) {
+		rel := map[string]interface{}{
+			"data": []interface{}{
+				map[string]interface{}{
+					"id":   "1",
+					"type": "example",
+				},
+			},
+		}
+		if isRelationshipZero(rel) {
+			t.Fatal("expected false for non-empty slice data")
+		}
 	})
 }

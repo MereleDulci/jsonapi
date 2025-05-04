@@ -453,7 +453,7 @@ func deduplicateIncluded(includes []interface{}) []interface{} {
 
 			relationshipsLeft := doc["relationships"].(map[string]interface{})
 			relationshipsRight := unique[key].(map[string]interface{})["relationships"].(map[string]interface{})
-			mergedRelationships := shallowMerge(relationshipsLeft, relationshipsRight, isAttributeZero)
+			mergedRelationships := shallowMerge(relationshipsLeft, relationshipsRight, isRelationshipZero)
 
 			unique[key] = map[string]interface{}{
 				"type":          resourceType,
@@ -492,7 +492,26 @@ func shallowMerge(a, b map[string]interface{}, isZero zeroPredicate) map[string]
 }
 
 func isAttributeZero(attr interface{}) bool {
+	if attr == nil {
+		return true
+	}
 	return reflect.ValueOf(attr).IsZero()
+}
+
+func isRelationshipZero(rel interface{}) bool {
+	data, ok := rel.(map[string]interface{})["data"]
+	if !ok {
+		return true
+	}
+
+	switch data.(type) {
+	case map[string]interface{}:
+		return len(data.(map[string]interface{})) == 0
+	case []interface{}:
+		return len(data.([]interface{})) == 0
+	default:
+		return true
+	}
 }
 
 func toCamelCase(s string) string {
