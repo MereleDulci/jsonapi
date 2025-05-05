@@ -1443,6 +1443,7 @@ func Test_shallowMerge(t *testing.T) {
 			"key1": "value1",
 			"key2": "value2",
 			"key3": 3,
+			"key4": nil,
 		}
 
 		if len(result) != len(expected) {
@@ -1502,6 +1503,40 @@ func Test_shallowMerge(t *testing.T) {
 				t.Fatalf("expected %v for key %s, got %v", v, k, result[k])
 			}
 		}
+	})
+
+	t.Run("should not drop off zero values on both maps if keys are defined", func(t *testing.T) {
+		a := map[string]interface{}{
+			"key1": "",
+			"key2": 0,
+		}
+		b := map[string]interface{}{}
+
+		expected := map[string]interface{}{
+			"key1": "",
+			"key2": 0,
+		}
+
+		leftToRight := shallowMerge(a, b, isAttributeZero)
+		rightToLeft := shallowMerge(b, a, isAttributeZero)
+
+		if len(rightToLeft) != len(expected) {
+			t.Fatalf("expected %d keys, got %d", len(expected), len(rightToLeft))
+		}
+
+		if len(leftToRight) != len(expected) {
+			t.Fatalf("expected %d keys, got %d", len(expected), len(leftToRight))
+		}
+
+		for k, v := range expected {
+			if leftToRight[k] != v {
+				t.Fatalf("expected %v for key %s, got %v", v, k, leftToRight[k])
+			}
+			if rightToLeft[k] != v {
+				t.Fatalf("expected %v for key %s, got %v", v, k, rightToLeft[k])
+			}
+		}
+
 	})
 }
 

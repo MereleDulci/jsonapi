@@ -479,11 +479,19 @@ type zeroPredicate func(i interface{}) bool
 func shallowMerge(a, b map[string]interface{}, isZero zeroPredicate) map[string]interface{} {
 	out := map[string]interface{}{}
 	for k, v := range a {
+		if _, ok := out[k]; !ok { //Makes sure to at least keep the key in place
+			out[k] = v
+		}
+
 		if !isZero(v) {
 			out[k] = v
 		}
 	}
 	for k, v := range b {
+		if _, ok := out[k]; !ok { //Makes sure to at least keep the key in place
+			out[k] = v
+		}
+
 		if !isZero(v) {
 			out[k] = v
 		}
