@@ -40,24 +40,31 @@ func UnmarshalPatchesSlice(patches []PatchOp, model reflect.Type) (out []PatchOp
 		switch patch.Op {
 		case "replace", "test":
 			if patch.Path == "" {
-				return nil, errors.New("invalid patch operation")
+				return nil, errors.New("invalid patch operation - empty path")
 			}
 
 			patchPathParts := strings.Split(strings.TrimPrefix(patch.Path, "/"), "/")
 
-			fieldVal, err := digIn(modelVal, patchPathParts)
+			fieldVal, jsonapiType, err := digIn(modelVal, patchPathParts)
 			if err != nil {
 				return nil, fmt.Errorf("failed to dig into patch path: %w", err)
 			}
 
 			if fieldVal.IsValid() {
-				unmarshalSingleAttribute(fieldVal, patch.Value)
-				patches[i].Value = fieldVal.Interface()
+				if jsonapiType == "relation" {
+					idFieldType, idFieldVal, resourceName := getIdFieldVal(fieldVal.Type(), fieldVal)
+					if err := unmarshalID(idFieldType, idFieldVal, patch.Value, resourceName); err != nil {
+						return nil, fmt.Errorf("failed to unmarshal referenced ID: %w", err)
+					}
+				} else {
+					unmarshalSingleAttribute(fieldVal, patch.Value)
+					patches[i].Value = fieldVal.Interface()
+				}
 			}
 		case "add":
 			//Applicable to lists only, so need to validate the targets
 			patchPathParts := strings.Split(strings.TrimPrefix(patch.Path, "/"), "/")
-			fieldVal, err := digIn(modelVal, patchPathParts)
+			fieldVal, jsonapiType, err := digIn(modelVal, patchPathParts)
 			if err != nil {
 				return nil, fmt.Errorf("failed to dig into patch path: %w", err)
 			}
@@ -78,16 +85,26 @@ func UnmarshalPatchesSlice(patches []PatchOp, model reflect.Type) (out []PatchOp
 					}
 					fieldPrimitiveVal := reflect.New(fieldPrimitiveType).Elem()
 
-					unmarshalSingleAttribute(fieldPrimitiveVal, patch.Value)
-					patches[i].Value = fieldPrimitiveVal.Interface()
+					if jsonapiType == "relation" {
+						//In case of relation we can only receive id value, but the target type is unknown
+						//fieldPrimitiveVal is now relation value which is a nil struct that should have a primary field somewhere
+						//Should be similar to modelType and modelVal in unmarshalOne here
+						idFieldType, idFieldVal, resourceName := getIdFieldVal(fieldPrimitiveType, fieldPrimitiveVal)
+						if err := unmarshalID(idFieldType, idFieldVal, patch.Value, resourceName); err != nil {
+							return nil, fmt.Errorf("failed to unmarshal referenced ID: %w", err)
+						}
+					} else {
+						unmarshalSingleAttribute(fieldPrimitiveVal, patch.Value)
+						patches[i].Value = fieldPrimitiveVal.Interface()
+					}
 				} else {
 					return nil, errors.New("invalid patch operation - target field is not a slice")
 				}
 			} else {
-				return nil, errors.New("invalid patch operation")
+				return nil, fmt.Errorf("invalid patch operation - cannot target %s", patch.Path)
 			}
 		case "":
-			return nil, errors.New("invalid patch operation")
+			return nil, errors.New("invalid patch operation - empty op")
 		default:
 			continue //Stepping over other options for now for compatibility
 		}
@@ -96,19 +113,22 @@ func UnmarshalPatchesSlice(patches []PatchOp, model reflect.Type) (out []PatchOp
 	return patches, nil
 }
 
-func digIn(modelVal reflect.Value, pathParts []string) (reflect.Value, error) {
+func digIn(modelVal reflect.Value, pathParts []string) (reflect.Value, string, error) {
 	var fieldVal reflect.Value
+	var jsonapiType string
 	for i := 0; i < modelVal.Elem().NumField(); i++ {
 		field := modelVal.Elem().Type().Field(i)
-		jsonapiType := getJsonapiFieldType(field)
-		if jsonapiType == "attr" || jsonapiType == "" {
-			//Only handle explicit and implicit attributes
-			//Primary cannot be patched, reference types are managed on the application level
-			attrName := getAttributeName(field)
-			if attrName == pathParts[0] {
-				fieldVal = modelVal.Elem().Field(i)
-				break
-			}
+		jsonapiType = getJsonapiFieldType(field)
+		if jsonapiType == "" {
+			jsonapiType = "attr" //Defaults to attr if not set or only json tag is provided
+		}
+
+		//Only handle explicit and implicit attributes
+		//Primary cannot be patched, reference types are managed on the application level
+		attrName := getAttributeName(field)
+		if attrName == pathParts[0] {
+			fieldVal = modelVal.Elem().Field(i)
+			break
 		}
 	}
 
@@ -121,5 +141,28 @@ func digIn(modelVal reflect.Value, pathParts []string) (reflect.Value, error) {
 		}
 	}
 
-	return fieldVal, nil
+	return fieldVal, jsonapiType, nil
+}
+
+func getIdFieldVal(modelType reflect.Type, modelVal reflect.Value) (reflect.StructField, reflect.Value, string) {
+	if modelType.Kind() == reflect.Ptr { //Unwrap potential pointer
+		modelType = modelType.Elem()
+		modelVal = reflect.New(modelType).Elem()
+	}
+
+	for i := 0; i < modelType.NumField(); i++ {
+		fieldType := modelType.Field(i)
+		fieldVal := modelVal.Field(i)
+
+		tag := fieldType.Tag.Get("jsonapi")
+		if tag != "" {
+			parts := strings.Split(tag, ",")
+			if parts[0] == "primary" {
+				return fieldType, fieldVal, parts[1]
+			}
+		}
+	}
+
+	//No primary field found on relationship, has to be a configuration mistake so panic here is appropriate
+	panic(errors.New("no primary field found on relationship field type"))
 }

@@ -170,46 +170,8 @@ func unmarshalOne(data map[string]interface{}, model interface{}, included []int
 		fieldType := modelType.Field(i)
 		fieldVal := modelVal.Field(i)
 
-		jsonapitag := fieldType.Tag.Get("jsonapi")
-		if jsonapitag != "" && resourceID != nil {
-			parts := strings.Split(jsonapitag, ",")
-			if len(parts) > 1 {
-				switch parts[0] {
-				case "primary":
-					//Check provided model type matches
-					if parts[1] != resourceType {
-						return fmt.Errorf("resource type does not match model type, expect %s, got %s", parts[1], resourceType)
-					}
-					stringMarshallerType := reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
-
-					switch {
-					case fieldVal.Type().Implements(stringMarshallerType):
-						v := reflect.New(fieldVal.Type().Elem())
-						v.MethodByName("UnmarshalText").
-							Call([]reflect.Value{reflect.ValueOf([]byte(resourceID.(string)))})
-						fieldVal.Set(v)
-					case reflect.PointerTo(fieldVal.Type()).Implements(stringMarshallerType):
-						v := reflect.New(fieldVal.Type())
-						v.MethodByName("UnmarshalText").
-							Call([]reflect.Value{reflect.ValueOf([]byte(resourceID.(string)))})
-						fieldVal.Set(v.Elem())
-					default:
-						switch fieldVal.Kind() {
-						case reflect.String:
-							fieldVal.SetString(resourceID.(string))
-						case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-							fieldVal.SetInt(int64(resourceID.(float64)))
-						case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-							fieldVal.SetUint(uint64(resourceID.(float64)))
-						default:
-
-							return errors.New("ID field must be a string, number or implement encoding.TextUnmarshaler")
-						}
-
-					}
-					continue //to process other fields
-				}
-			}
+		if err := unmarshalID(fieldType, fieldVal, resourceID, resourceType.(string)); err != nil {
+			return err
 		}
 
 		if attributesValid {
@@ -219,6 +181,60 @@ func unmarshalOne(data map[string]interface{}, model interface{}, included []int
 			if err := unmarshalRelationships(fieldType, fieldVal, resourceRelationships, included); err != nil {
 				return err
 			}
+		}
+
+	}
+
+	return nil
+}
+
+func isIDField(fieldType reflect.StructField, resourceType string) (bool, error) {
+	jsonapitag := fieldType.Tag.Get("jsonapi")
+	if jsonapitag != "" {
+		parts := strings.Split(jsonapitag, ",")
+		if len(parts) > 1 && parts[0] == "primary" {
+			if parts[1] != resourceType {
+				return false, fmt.Errorf("resource type does not match model type, expect %s, got %s", parts[1], resourceType)
+			}
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func unmarshalID(fieldType reflect.StructField, fieldVal reflect.Value, resourceID interface{}, resourceType string) error {
+	isId, err := isIDField(fieldType, resourceType)
+	if err != nil {
+		return err
+	}
+
+	if !isId || resourceID == nil { //The field is not id, or ID value is not provided
+		return nil
+	}
+
+	stringMarshallerType := reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
+
+	switch {
+	case fieldVal.Type().Implements(stringMarshallerType):
+		v := reflect.New(fieldVal.Type().Elem())
+		v.MethodByName("UnmarshalText").
+			Call([]reflect.Value{reflect.ValueOf([]byte(resourceID.(string)))})
+		fieldVal.Set(v)
+	case reflect.PointerTo(fieldVal.Type()).Implements(stringMarshallerType):
+		v := reflect.New(fieldVal.Type())
+		v.MethodByName("UnmarshalText").
+			Call([]reflect.Value{reflect.ValueOf([]byte(resourceID.(string)))})
+		fieldVal.Set(v.Elem())
+	default:
+		switch fieldVal.Kind() {
+		case reflect.String:
+			fieldVal.SetString(resourceID.(string))
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			fieldVal.SetInt(int64(resourceID.(float64)))
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			fieldVal.SetUint(uint64(resourceID.(float64)))
+		default:
+			return errors.New("ID field must be a string, number or implement encoding.TextUnmarshaler")
 		}
 
 	}
