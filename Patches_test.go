@@ -1,6 +1,7 @@
 package jsonapi
 
 import (
+	"encoding/hex"
 	"fmt"
 	"reflect"
 	"testing"
@@ -163,9 +164,12 @@ func TestUnmarshalPatches_Replace(t *testing.T) {
 
 	t.Run("should correctly unmarshal references", func(t *testing.T) {
 		//patches are limited to update reference ids only, not the properties of the related object
+
 		raw := `[
 			{"op": "replace", "path": "/byRef", "value": "1"},
-			{"op": "replace", "path": "/byVal", "value": "2"}
+			{"op": "replace", "path": "/byVal", "value": "2"},
+			{"op": "replace", "path": "/listByRef", "value": ["1"]},
+			{"op": "replace", "path": "/listByVal", "value": ["2"]}
 		]`
 		type Referenced struct {
 			ID  string `jsonapi:"primary,referenced"`
@@ -173,9 +177,11 @@ func TestUnmarshalPatches_Replace(t *testing.T) {
 		}
 
 		type SUT struct {
-			ID    string      `jsonapi:"primary,tests"`
-			ByRef *Referenced `jsonapi:"relation,byRef"`
-			ByVal Referenced  `jsonapi:"relation,byVal"`
+			ID        string        `jsonapi:"primary,tests"`
+			ByRef     *Referenced   `jsonapi:"relation,byRef"`
+			ByVal     Referenced    `jsonapi:"relation,byVal"`
+			ListByRef []*Referenced `jsonapi:"relation,listByRef"`
+			ListByVal []Referenced  `jsonapi:"relation,listByVal"`
 		}
 
 		parsed, err := UnmarshalPatches([]byte(raw), reflect.TypeOf(new(SUT)))
@@ -183,8 +189,8 @@ func TestUnmarshalPatches_Replace(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if len(parsed) != 2 {
-			t.Fatalf("expected 2 patches, got %d", len(parsed))
+		if len(parsed) != 4 {
+			t.Fatalf("expected 4 patches, got %d", len(parsed))
 		}
 
 		if parsed[0].Value.(string) != "1" {
@@ -194,33 +200,65 @@ func TestUnmarshalPatches_Replace(t *testing.T) {
 		if parsed[1].Value.(string) != "2" {
 			t.Fatalf("expected \"2\", got %v", parsed[1].Value)
 		}
+
+		if parsed[2].Value.([]interface{})[0].(string) != "1" {
+			t.Fatalf("expected \"1\", got %v", parsed[2].Value)
+		}
+
+		if parsed[3].Value.([]interface{})[0].(string) != "2" {
+			t.Fatalf("expected \"2\", got %v", parsed[3].Value)
+		}
 	})
 
 	t.Run("should correctly unmarshal with TextUnmarshaller", func(t *testing.T) {
 		raw := `[
-			{"op": "replace", "path": "/alias", "value": "Legit"}
+			{"op": "replace", "path": "/byVal", "value": "0102aaff"},
+			{"op": "replace", "path": "/byRef", "value": "0202aaff"},
+			{"op": "replace", "path": "/listByVal", "value": ["0302aaff"]},
+			{"op": "replace", "path": "/listByRef", "value": ["0402aaff"]}
 		]`
 
 		type SUT struct {
-			ID    string `jsonapi:"primary,tests"`
-			Alias Alias  `jsonapi:"attr,alias"`
+			ID        string                `jsonapi:"primary,tests"`
+			ByVal     StringSerializable    `jsonapi:"attr,byVal"`
+			ByRef     *StringSerializable   `jsonapi:"attr,byRef"`
+			ListByVal []StringSerializable  `jsonapi:"attr,listByVal"`
+			ListByRef []*StringSerializable `jsonapi:"attr,listByRef"`
 		}
 
 		parsed, err := UnmarshalPatches([]byte(raw), reflect.TypeOf(new(SUT)))
 
 		if err != nil {
-			fmt.Println(err)
-
 			t.Fatal(err)
 		}
 
-		if len(parsed) != 1 {
+		if len(parsed) != 4 {
 			t.Fatalf("expected 1 patch, got %d", len(parsed))
 		}
 
-		if parsed[0].Value.(Alias) != Legit {
-			t.Fatalf("expected \"Legit\", got %v", parsed[0].Value)
+		for i, pattern := range []string{"0102aaff", "0202aaff", "0302aaff", "0402aaff"} {
+			expected, _ := hex.DecodeString(pattern)
+
+			switch i {
+			case 0:
+				if parsed[i].Value.(StringSerializable) != StringSerializable(expected) {
+					t.Fatalf("expected %s, got %v", pattern, parsed[i].Value)
+				}
+			case 1:
+				if *parsed[i].Value.(*StringSerializable) != StringSerializable(expected) {
+					t.Fatalf("expected %s, got %v", pattern, parsed[i].Value)
+				}
+			case 2:
+				if parsed[i].Value.([]StringSerializable)[0] != StringSerializable(expected) {
+					t.Fatalf("expected %s, got %v", pattern, parsed[i].Value)
+				}
+			case 3:
+				if *parsed[i].Value.([]*StringSerializable)[0] != StringSerializable(expected) {
+					t.Fatalf("expected %s, got %v", pattern, parsed[i].Value)
+				}
+			}
 		}
+
 	})
 }
 
@@ -495,4 +533,42 @@ func TestUnmarshalPatches_Add(t *testing.T) {
 		}
 	})
 
+	t.Run("should correctly handle operations on reference fields with UnmarshalText", func(t *testing.T) {
+
+		type Referenced struct {
+			ID  StringSerializable `jsonapi:"primary,referenced"`
+			Any string             `jsonapi:"attr,any"`
+		}
+
+		type SUT struct {
+			ID    string        `jsonapi:"primary,tests"`
+			ByRef []*Referenced `jsonapi:"relation,byRef"`
+			ByVal []Referenced  `jsonapi:"relation,byVal"`
+		}
+
+		raw := `[
+			{"op": "add", "path": "/byRef", "value": "0102aaff"},
+			{"op": "add", "path": "/byVal", "value": "0202aaff"}
+		]`
+
+		parsed, err := UnmarshalPatches([]byte(raw), reflect.TypeOf(new(SUT)))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(parsed) != 2 {
+			t.Fatalf("expected 2 patches, got %d", len(parsed))
+		}
+
+		expectedA, _ := hex.DecodeString("0102aaff")
+		expectedB, _ := hex.DecodeString("0202aaff")
+		if parsed[0].Value.(StringSerializable) != StringSerializable(expectedA) {
+			t.Fatalf("expected 0102aaff, got %v", parsed[0].Value)
+		}
+
+		if parsed[1].Value.(StringSerializable) != StringSerializable(expectedB) {
+			t.Fatalf("expected 0202aaff, got %v", parsed[1].Value)
+		}
+
+	})
 }

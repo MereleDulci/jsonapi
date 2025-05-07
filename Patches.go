@@ -52,9 +52,36 @@ func UnmarshalPatchesSlice(patches []PatchOp, model reflect.Type) (out []PatchOp
 
 			if fieldVal.IsValid() {
 				if jsonapiType == "relation" {
-					idFieldType, idFieldVal, resourceName := getIdFieldVal(fieldVal.Type(), fieldVal)
-					if err := unmarshalID(idFieldType, idFieldVal, patch.Value, resourceName); err != nil {
-						return nil, fmt.Errorf("failed to unmarshal referenced ID: %w", err)
+					fieldPrimitiveType := fieldVal.Type()
+					fieldPrimitiveVal := fieldVal
+
+					if fieldVal.Kind() == reflect.Slice {
+						fieldPrimitiveType = fieldPrimitiveType.Elem()
+						if fieldPrimitiveType.Kind() == reflect.Ptr {
+							//fieldPrimitiveType is []T, need to step into T
+							fieldPrimitiveType = fieldPrimitiveType.Elem()
+						}
+						fieldPrimitiveVal = reflect.New(fieldPrimitiveType).Elem()
+
+						//Should iterate over all elements of the slice one by one
+						list, ok := patch.Value.([]interface{})
+						if !ok {
+							return nil, errors.New("invalid patch operation - cannot target slice with non-slice value with replace")
+						}
+						idFieldType, idFieldVal, resourceName := getIdFieldVal(fieldPrimitiveType, fieldPrimitiveVal)
+						for i, item := range list {
+							if err := unmarshalID(idFieldType, idFieldVal, item, resourceName); err != nil {
+								return nil, fmt.Errorf("failed to unmarshal referenced ID: %w", err)
+							}
+							list[i] = idFieldVal.Interface()
+						}
+						patches[i].Value = list
+					} else {
+						idFieldType, idFieldVal, resourceName := getIdFieldVal(fieldPrimitiveType, fieldPrimitiveVal)
+						if err := unmarshalID(idFieldType, idFieldVal, patch.Value, resourceName); err != nil {
+							return nil, fmt.Errorf("failed to unmarshal referenced ID: %w", err)
+						}
+						patches[i].Value = idFieldVal.Interface()
 					}
 				} else {
 					unmarshalSingleAttribute(fieldVal, patch.Value)
@@ -93,6 +120,7 @@ func UnmarshalPatchesSlice(patches []PatchOp, model reflect.Type) (out []PatchOp
 						if err := unmarshalID(idFieldType, idFieldVal, patch.Value, resourceName); err != nil {
 							return nil, fmt.Errorf("failed to unmarshal referenced ID: %w", err)
 						}
+						patches[i].Value = idFieldVal.Interface()
 					} else {
 						unmarshalSingleAttribute(fieldPrimitiveVal, patch.Value)
 						patches[i].Value = fieldPrimitiveVal.Interface()
