@@ -142,6 +142,10 @@ func UnmarshalPatchesSlice(patches []PatchOp, model reflect.Type) (out []PatchOp
 }
 
 func digIn(modelVal reflect.Value, pathParts []string) (reflect.Value, string, error) {
+	if modelVal.Elem().Kind() != reflect.Struct {
+		return modelVal.Elem(), pathParts[0], nil
+	}
+
 	var fieldVal reflect.Value
 	var jsonapiType string
 	for i := 0; i < modelVal.Elem().NumField(); i++ {
@@ -166,6 +170,9 @@ func digIn(modelVal reflect.Value, pathParts []string) (reflect.Value, string, e
 		}
 		if fieldVal.Kind() == reflect.Struct {
 			return digIn(reflect.New(fieldVal.Type()), pathParts[1:])
+		}
+		if fieldVal.Kind() == reflect.Map {
+			return digIn(reflect.New(fieldVal.Type().Elem()), pathParts[1:])
 		}
 	}
 

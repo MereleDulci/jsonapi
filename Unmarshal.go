@@ -316,8 +316,9 @@ func unmarshalSingleAttribute(fieldVal reflect.Value, attribute interface{}) {
 
 		fieldValueKind := fieldVal.Type().Elem().Kind()
 		fieldValueType := fieldVal.Type().Elem()
+		fieldKeyVal := fieldVal.Type().Key()
 
-		reflection := reflect.MakeMap(reflect.MapOf(fieldVal.Type().Key(), fieldValueType))
+		reflection := reflect.MakeMap(reflect.MapOf(fieldKeyVal, fieldValueType))
 		reflectionValue := reflect.New(reflection.Type())
 		reflectionValue.Elem().Set(reflection)
 
@@ -325,7 +326,10 @@ func unmarshalSingleAttribute(fieldVal reflect.Value, attribute interface{}) {
 		mapValuePtr := mapPtr.Elem()
 
 		for key, value := range dataMap {
-			mapValuePtr.SetMapIndex(reflect.ValueOf(key), castPrimitive(fieldValueKind, fieldValueType, value))
+			mapValuePtr.SetMapIndex(
+				castPrimitive(fieldKeyVal.Kind(), fieldKeyVal, key),
+				castPrimitive(fieldValueKind, fieldValueType, value),
+			)
 		}
 
 		fieldVal.Set(mapValuePtr)

@@ -260,6 +260,67 @@ func TestUnmarshalPatches_Replace(t *testing.T) {
 		}
 
 	})
+
+	t.Run("replace on maps with TextUnmarshaler keys", func(t *testing.T) {
+		type SUT struct {
+			ID  string           `jsonapi:"primary,tests"`
+			Map map[Alias]string `jsonapi:"attr,map"`
+		}
+
+		raw := `[
+			{"op": "replace", "path": "/map/Legit", "value": "test"}
+		]`
+
+		parsed, err := UnmarshalPatches([]byte(raw), reflect.TypeOf(new(SUT)))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(parsed) != 1 {
+			t.Fatalf("expected 1 patch, got %d", len(parsed))
+		}
+
+		if parsed[0].Value.(string) != "test" {
+			t.Fatalf("expected test, got %v", parsed[0].Value)
+		}
+
+		if parsed[0].Path != "/map/Legit" {
+			t.Fatalf("expected /map/Legit, got %s", parsed[0].Path)
+		}
+	})
+
+	t.Run("replace of map value with TextUnmarshaler key", func(t *testing.T) {
+		type SUT struct {
+			ID  string           `jsonapi:"primary,tests"`
+			Map map[Alias]string `jsonapi:"attr,map"`
+		}
+
+		raw := `[
+			{"op": "replace", "path": "/map", "value": {"Legit": "test"}}
+		]`
+
+		parsed, err := UnmarshalPatches([]byte(raw), reflect.TypeOf(new(SUT)))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(parsed) != 1 {
+			t.Fatalf("expected 1 patch, got %d", len(parsed))
+		}
+
+		typed, ok := parsed[0].Value.(map[Alias]string)
+		if !ok {
+			t.Fatalf("expected map[Alias]string, got %T", parsed[0].Value)
+		}
+
+		if typed["Legit"] != "test" {
+			t.Fatalf("expected test, got %v", parsed[0].Value)
+		}
+
+		if parsed[0].Path != "/map" {
+			t.Fatalf("expected /map, got %s", parsed[0].Path)
+		}
+	})
 }
 
 func TestUnmarshalPatches_Add(t *testing.T) {

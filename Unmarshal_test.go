@@ -734,6 +734,45 @@ func TestUnmarshalMap(t *testing.T) {
 			t.Errorf("expected %+v, got %+v", s.Mf, out.Mf)
 		}
 	})
+
+	t.Run("should correctly handle map keys", func(t *testing.T) {
+		type SUT struct {
+			ID string `jsonapi:"primary,test"`
+			M  map[StringSerializable]string
+		}
+
+		input := SUT{
+			ID: "1",
+			M: map[StringSerializable]string{
+				StringSerializable{1, 2, 3, 4}: "test",
+			},
+		}
+
+		raw, err := Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		out, err := UnmarshalOneAsType(raw, reflect.TypeOf(new(SUT)))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		strong, ok := out.(*SUT)
+		if !ok {
+			t.Fatal("expected SUT type")
+		}
+
+		for k, v := range strong.M {
+			s := StringSerializable{1, 2, 3, 4}
+			if k != s {
+				t.Errorf("expected %+v, got %+v", StringSerializable{1, 2, 3, 4}, k)
+			}
+			if v != "test" {
+				t.Errorf("expected %+v, got %+v", "test", v)
+			}
+		}
+	})
 }
 
 func TestUnmarshalWithIncluded(t *testing.T) {
