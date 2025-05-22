@@ -773,6 +773,101 @@ func TestUnmarshalMap(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("should correctly handle non-primitive map values", func(t *testing.T) {
+		type SUT struct {
+			ID string                        `jsonapi:"primary,test"`
+			M  map[string]StringSerializable `jsonapi:"attr,m"`
+		}
+
+		input := SUT{
+			ID: "1",
+			M: map[string]StringSerializable{
+				"test": {1, 2, 3, 4},
+			},
+		}
+
+		raw, err := Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		out, err := UnmarshalOneAsType(raw, reflect.TypeOf(new(SUT)))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		strong, ok := out.(*SUT)
+		if !ok {
+			t.Fatal("expected SUT type")
+		}
+
+		for k, v := range strong.M {
+			if k != "test" {
+				t.Errorf("expected %+v, got %+v", "test", k)
+			}
+			s := StringSerializable{1, 2, 3, 4}
+			if v != s {
+				t.Errorf("expected %+v, got %+v", s, v)
+			}
+		}
+	})
+
+	t.Run("should correctly handle struct map values", func(t *testing.T) {
+		type Inner struct {
+			A int    `json:"a"`
+			B string `json:"b"`
+		}
+
+		type SUT struct {
+			ID string            `jsonapi:"primary,test"`
+			M  map[string]Inner  `jsonapi:"attr,m"`
+			P  map[string]*Inner `jsonapi:"attr,p"`
+		}
+
+		input := SUT{
+			ID: "1",
+			M: map[string]Inner{
+				"test": {A: 1, B: "test"},
+			},
+			P: map[string]*Inner{
+				"test": {A: 1, B: "test"},
+			},
+		}
+
+		raw, err := Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		out, err := UnmarshalOneAsType(raw, reflect.TypeOf(new(SUT)))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		strong, ok := out.(*SUT)
+		if !ok {
+			t.Fatal("expected SUT type")
+		}
+
+		for k, v := range strong.M {
+			if k != "test" {
+				t.Errorf("expected %+v, got %+v", "test", k)
+			}
+			if v.A != 1 || v.B != "test" {
+				t.Errorf("expected %+v, got %+v", Inner{A: 1, B: "test"}, v)
+			}
+		}
+
+		for k, v := range strong.P {
+			if k != "test" {
+				t.Errorf("expected %+v, got %+v", "test", k)
+			}
+			if v.A != 1 || v.B != "test" {
+				t.Errorf("expected %+v, got %+v", Inner{A: 1, B: "test"}, v)
+			}
+		}
+	})
 }
 
 func TestUnmarshalWithIncluded(t *testing.T) {

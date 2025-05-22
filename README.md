@@ -27,3 +27,7 @@ Anything related to the underlying API implementation is out of scope. This incl
 Leaving it entirely up to the user how to structure their API.
 
 However, we can provide some helper methods to make it easier to pair the implementations up.
+
+
+## Doc notes
+* `jsonapi` struct tags are not applicable to inner structs, use `json` instead.

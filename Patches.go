@@ -172,7 +172,13 @@ func digIn(modelVal reflect.Value, pathParts []string) (reflect.Value, string, e
 			return digIn(reflect.New(fieldVal.Type()), pathParts[1:])
 		}
 		if fieldVal.Kind() == reflect.Map {
-			return digIn(reflect.New(fieldVal.Type().Elem()), pathParts[1:])
+			if len(pathParts[1:]) == 1 {
+				//Patch is targeting one of map keys directly, the value then is value of the map itself
+				return reflect.New(fieldVal.Type().Elem()).Elem(), "attr", nil
+			} else {
+				//Patch is targeting a path inside the map. Step over one more key which is the map key
+				return digIn(reflect.New(fieldVal.Type().Elem()), pathParts[2:])
+			}
 		}
 	}
 

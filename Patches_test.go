@@ -321,6 +321,100 @@ func TestUnmarshalPatches_Replace(t *testing.T) {
 			t.Fatalf("expected /map, got %s", parsed[0].Path)
 		}
 	})
+
+	t.Run("replace of full map value with struct value", func(t *testing.T) {
+
+		type Inner struct {
+			A int `json:"a"`
+		}
+
+		type SUT struct {
+			ID  string           `jsonapi:"primary,tests"`
+			Map map[string]Inner `jsonapi:"attr,map"`
+		}
+
+		raw := `[
+			{"op": "replace", "path": "/map", "value": {"test": {"a": 1}}}
+		]`
+
+		parsed, err := UnmarshalPatches([]byte(raw), reflect.TypeOf(new(SUT)))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(parsed) != 1 {
+			t.Fatalf("expected 1 patch, got %d", len(parsed))
+		}
+
+		typed, ok := parsed[0].Value.(map[string]Inner)
+		if !ok {
+			t.Fatalf("expected map[string]Inner, got %T", parsed[0].Value)
+		}
+
+		if typed["test"].A != 1 {
+			t.Fatalf("expected 1, got %v", parsed[0].Value)
+		}
+
+		if parsed[0].Path != "/map" {
+			t.Fatalf("expected /map, got %s", parsed[0].Path)
+		}
+
+		if parsed[0].Value.(map[string]Inner)["test"].A != 1 {
+			t.Fatalf("expected 1, got %v", parsed[0].Value)
+		}
+	})
+
+	t.Run("replace of partial map value with struct value", func(t *testing.T) {
+		type Inner struct {
+			A int `json:"a"`
+		}
+
+		type SUT struct {
+			ID  string           `jsonapi:"primary,tests"`
+			Map map[string]Inner `jsonapi:"attr,map"`
+		}
+
+		raw := `[
+			{"op": "replace", "path": "/map/test", "value": {"a": 1}},
+			{"op": "replace", "path": "/map/test/a", "value": 2}
+		]`
+
+		parsed, err := UnmarshalPatches([]byte(raw), reflect.TypeOf(new(SUT)))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(parsed) != 2 {
+			t.Fatalf("expected 2 patches, got %d", len(parsed))
+		}
+
+		typed, ok := parsed[0].Value.(Inner)
+		if !ok {
+			t.Fatalf("expected Inner, got %T", parsed[0].Value)
+		}
+
+		if typed.A != 1 {
+			t.Fatalf("expected 1, got %v", parsed[0].Value)
+		}
+
+		if parsed[0].Path != "/map/test" {
+			t.Fatalf("expected /map/test, got %s", parsed[0].Path)
+		}
+
+		val, ok := parsed[1].Value.(int)
+		if !ok {
+			t.Fatalf("expected Inner, got %T", parsed[1].Value)
+		}
+
+		if val != 2 {
+			t.Fatalf("expected 2, got %v", parsed[1].Value)
+		}
+
+		if parsed[1].Path != "/map/test/a" {
+			t.Fatalf("expected /map/test/a, got %s", parsed[1].Path)
+		}
+	})
+
 }
 
 func TestUnmarshalPatches_Add(t *testing.T) {

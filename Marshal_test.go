@@ -240,6 +240,49 @@ func TestMarshal_single(t *testing.T) {
 
 	})
 
+	t.Run("should correctly marshal non-primitive map values", func(t *testing.T) {
+		type inner struct {
+			A int `json:"a"`
+		}
+
+		input := struct {
+			ID string           `jsonapi:"primary,resource-name"`
+			M  map[string]inner `jsonapi:"attr,m"`
+		}{
+			ID: "1",
+			M: map[string]inner{
+				"key1": {A: 1},
+			},
+		}
+
+		plain, err := MarshalOne(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		ref, err := MarshalOne(&input)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, v := range [][]byte{plain, ref} {
+			check := map[string]interface{}{}
+			if err := json.Unmarshal(v, &check); err != nil {
+				t.Fatal(err)
+			}
+
+			attrs, ok := check["data"].(map[string]interface{})["attributes"].(map[string]interface{})
+			if !ok {
+				t.Fatal("unexpected attributes type")
+			}
+
+			if attrs["m"].(map[string]interface{})["key1"].(map[string]interface{})["a"] != float64(1) {
+				t.Fatal("unexpected attribute value on map")
+			}
+		}
+
+	})
+
 }
 
 func TestMarshal_relations(t *testing.T) {

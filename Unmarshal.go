@@ -326,9 +326,22 @@ func unmarshalSingleAttribute(fieldVal reflect.Value, attribute interface{}) {
 		mapValuePtr := mapPtr.Elem()
 
 		for key, value := range dataMap {
+			var primitiveVal reflect.Value
+
+			switch fieldValueKind {
+			case reflect.Ptr:
+				primitiveVal = reflect.New(fieldValueType).Elem() //Still has to be unwrapped as .New returns a pointer itself
+				unmarshalSinglePointer(primitiveVal, value)
+			case reflect.Struct:
+				primitiveVal = reflect.New(fieldValueType).Elem()
+				unmarshalSingleStruct(primitiveVal, value)
+			default:
+				primitiveVal = castPrimitive(fieldValueKind, fieldValueType, value)
+			}
+
 			mapValuePtr.SetMapIndex(
 				castPrimitive(fieldKeyVal.Kind(), fieldKeyVal, key),
-				castPrimitive(fieldValueKind, fieldValueType, value),
+				primitiveVal,
 			)
 		}
 
