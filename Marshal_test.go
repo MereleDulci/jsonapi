@@ -1066,8 +1066,12 @@ func TestMarshalRelationshipDeduplication(t *testing.T) {
 
 		type Comment struct {
 			ID      string `jsonapi:"primary,comments"`
-			Content string
-			Bool    bool
+			Content string //Merged by zero / non-zero
+			Bool    bool   //True is preferred
+			List    []bool //Non-empty is preferred
+			Struct  struct {
+				A bool
+			}
 			ReplyTo *Comment `jsonapi:"relation,reply"`
 		}
 
@@ -1077,10 +1081,10 @@ func TestMarshalRelationshipDeduplication(t *testing.T) {
 		}
 
 		hand := []*Comment{
-			{ID: "2", Content: "first", Bool: true},
-			{ID: "4", Content: "third", Bool: true, ReplyTo: &Comment{ID: "3"}},
-			{ID: "3", Content: "second", Bool: true, ReplyTo: &Comment{ID: "2"}},
-			{ID: "5", Content: "third", Bool: true, ReplyTo: &Comment{ID: "6"}},
+			{ID: "2", Content: "first", Bool: true, List: []bool{true}},
+			{ID: "4", Content: "third", Bool: true, List: []bool{true}, ReplyTo: &Comment{ID: "3"}},
+			{ID: "3", Content: "second", Bool: true, List: []bool{true}, ReplyTo: &Comment{ID: "2"}},
+			{ID: "5", Content: "third", Bool: true, List: []bool{true}, ReplyTo: &Comment{ID: "6"}},
 		}
 
 		for i, _ := range hand {
@@ -1138,6 +1142,12 @@ func TestMarshalRelationshipDeduplication(t *testing.T) {
 					}
 					if attrs["bool"] == false && doc["id"] != "6" {
 						t.Fatal("unexpected boolean attribute value")
+					}
+					if attrs["list"] == nil {
+						t.Fatal("missing list attribute value")
+					}
+					if len(attrs["list"].([]interface{})) != 1 && doc["id"] != "6" {
+						t.Fatalf("unexpected number of list resources, got %v", len(attrs["list"].([]interface{})))
 					}
 				}
 			}

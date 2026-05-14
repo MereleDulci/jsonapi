@@ -503,7 +503,17 @@ func isAttributeZero(attr interface{}) bool {
 	if attr == nil {
 		return true
 	}
-	return reflect.ValueOf(attr).IsZero()
+	inVal := reflect.ValueOf(attr)
+	if inVal.IsZero() {
+		return true
+	}
+
+	//Prefer non-empty slice to empty
+	if inVal.Kind() == reflect.Slice {
+		return inVal.Len() == 0
+	}
+
+	return false
 }
 
 func isRelationshipZero(rel interface{}) bool {
